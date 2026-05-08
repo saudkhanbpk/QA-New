@@ -1,0 +1,606 @@
+"use client";
+
+import { useState } from "react";
+import Image from "next/image";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { CheckCircle2, XCircle, AlertTriangle, Download, Globe, Clock, Monitor, Smartphone, Tablet, Wrench } from "lucide-react";
+import type { TestReport, TestResult, Severity, ResultStatus } from "@/types";
+
+interface ReportViewProps { report: TestReport; }
+
+export function ReportView({ report }: ReportViewProps) {
+  const { run, results, screenshots } = report;
+  const totalFails = results.filter((r) => r.status === "fail").length;
+  const totalWarnings = results.filter((r) => r.status === "warning").length;
+  const overallPass = totalFails === 0;
+
+  const byCategory = {
+    responsive: results.filter((r) => r.category === "responsive"),
+    functional: results.filter((r) => r.category === "functional"),
+    accessibility: results.filter((r) => r.category === "accessibility"),
+    visual: results.filter((r) => r.category === "visual"),
+    performance: results.filter((r) => r.category === "performance"),
+    security: results.filter((r) => r.category === "security"),
+    seo: results.filter((r) => r.category === "seo"),
+    compatibility: results.filter((r) => r.category === "compatibility"),
+  };
+
+  async function downloadPDF() {
+    const { jsPDF } = await import("jspdf");
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const pageW = 210;
+    const margin = 15;
+    const contentW = pageW - margin * 2;
+    let y = 0;
+
+    // ── helpers ──────────────────────────────────────────────────────────
+    function newPage() {
+      doc.addPage();
+      y = 15;
+    }
+    function checkY(needed = 10) {
+      if (y + needed > 280) newPage();
+    }
+    function setColor(status: string) {
+      if (status === "pass") doc.setTextColor(22, 163, 74);
+      else if (status === "fail") doc.setTextColor(220, 38, 38);
+      else if (status === "warning") doc.setTextColor(202, 138, 4);
+      else doc.setTextColor(30, 30, 30);
+    }
+    function resetColor() { doc.setTextColor(30, 30, 30); }
+
+    // ── Cover page ───────────────────────────────────────────────────────
+    // Header bar
+    doc.setFillColor(37, 99, 235);
+    doc.rect(0, 0, 210, 40, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(22);
+    doc.text("QA Test Report", margin, 18);
+    doc.setFontSize(10);
+    doc.text("Automated Quality Assurance Analysis", margin, 26);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, margin, 33);
+    resetColor();
+    y = 50;
+
+    // URL box
+    doc.setFillColor(241, 245, 249);
+    doc.roundedRect(margin, y, contentW, 18, 2, 2, "F");
+    doc.setFontSize(9);
+    doc.setTextColor(100, 116, 139);
+    doc.text("TESTED URL", margin + 4, y + 6);
+    doc.setFontSize(10);
+    doc.setTextColor(30, 30, 30);
+    const urlLines = doc.splitTextToSize(run.page_url, contentW - 8);
+    doc.text(urlLines, margin + 4, y + 12);
+    y += 24;
+
+    // Overall Score (if available)
+    if (run.overall_score !== null) {
+      const scoreColor = run.overall_score >= 90 ? [22, 163, 74] :
+                        run.overall_score >= 70 ? [202, 138, 4] :
+                        run.overall_score >= 50 ? [234, 88, 12] : [220, 38, 38];
+      doc.setFillColor(scoreColor[0], scoreColor[1], scoreColor[2], 0.1);
+      doc.roundedRect(margin, y, contentW, 24, 2, 2, "F");
+      doc.setFontSize(9);
+      doc.setTextColor(100, 116, 139);
+      doc.text("OVERALL QUALITY SCORE", margin + 4, y + 6);
+      doc.setFontSize(32);
+      doc.setTextColor(scoreColor[0], scoreColor[1], scoreColor[2]);
+      doc.text(`${run.overall_score}/100`, margin + 4, y + 18);
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      const scoreLabel = run.overall_score >= 90 ? "Excellent" :
+                        run.overall_score >= 70 ? "Good" :
+                        run.overall_score >= 50 ? "Fair" : "Poor";
+      doc.text(scoreLabel, margin + 50, y + 18);
+      resetColor();
+      y += 30;
+    }
+
+    // Overall status
+    const overallStatus = totalFails === 0 ? "PASSED" : "FAILED";
+    doc.setFillColor(totalFails === 0 ? 220 : 254, totalFails === 0 ? 252 : 226, totalFails === 0 ? 231 : 226);
+    doc.roundedRect(margin, y, contentW, 14, 2, 2, "F");
+    doc.setFontSize(11);
+    setColor(totalFails === 0 ? "pass" : "fail");
+    doc.text(`Overall Status: ${overallStatus}`, margin + 4, y + 9);
+    resetColor();
+    y += 20;
+
+    // Summary stats
+    doc.setFontSize(12);
+    doc.text("Summary", margin, y);
+    y += 6;
+    doc.setFontSize(9);
+    const stats = [
+      { label: "Total Checks", value: String(results.length) },
+      { label: "Passed", value: String(results.filter(r => r.status === "pass").length), color: "pass" },
+      { label: "Failed", value: String(totalFails), color: "fail" },
+      { label: "Warnings", value: String(totalWarnings), color: "warning" },
+    ];
+    const colW = contentW / 4;
+    stats.forEach((s, i) => {
+      const x = margin + i * colW;
+      doc.setFillColor(248, 250, 252);
+      doc.roundedRect(x, y, colW - 2, 16, 1, 1, "F");
+      doc.setTextColor(100, 116, 139);
+      doc.setFontSize(7);
+      doc.text(s.label, x + 3, y + 5);
+      if (s.color) setColor(s.color); else resetColor();
+      doc.setFontSize(14);
+      doc.text(s.value, x + 3, y + 13);
+      resetColor();
+    });
+    y += 22;
+
+    // Category summary table
+    doc.setFontSize(12);
+    doc.text("Results by Category", margin, y);
+    y += 6;
+    const cats = [
+      { key: "responsive", label: "Responsive" },
+      { key: "functional", label: "Functional" },
+      { key: "accessibility", label: "Accessibility" },
+      { key: "performance", label: "Performance" },
+      { key: "security", label: "Security" },
+      { key: "seo", label: "SEO" },
+      { key: "compatibility", label: "Cross-Browser" },
+    ] as const;
+
+    // Table header
+    doc.setFillColor(37, 99, 235);
+    doc.rect(margin, y, contentW, 7, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(8);
+    doc.text("Category", margin + 2, y + 5);
+    doc.text("Total", margin + 70, y + 5);
+    doc.text("Passed", margin + 90, y + 5);
+    doc.text("Failed", margin + 115, y + 5);
+    doc.text("Warnings", margin + 140, y + 5);
+    doc.text("Status", margin + 165, y + 5);
+    y += 7;
+
+    cats.forEach((cat, idx) => {
+      const items = byCategory[cat.key];
+      if (items.length === 0) return;
+      const passes = items.filter(r => r.status === "pass").length;
+      const fails = items.filter(r => r.status === "fail").length;
+      const warns = items.filter(r => r.status === "warning").length;
+      const rowStatus = fails > 0 ? "fail" : warns > 0 ? "warning" : "pass";
+
+      doc.setFillColor(idx % 2 === 0 ? 248 : 255, idx % 2 === 0 ? 250 : 255, idx % 2 === 0 ? 252 : 255);
+      doc.rect(margin, y, contentW, 7, "F");
+      resetColor();
+      doc.setFontSize(8);
+      doc.text(cat.label, margin + 2, y + 5);
+      doc.text(String(items.length), margin + 70, y + 5);
+      setColor("pass"); doc.text(String(passes), margin + 90, y + 5);
+      setColor("fail"); doc.text(String(fails), margin + 115, y + 5);
+      setColor("warning"); doc.text(String(warns), margin + 140, y + 5);
+      setColor(rowStatus);
+      doc.text(rowStatus.toUpperCase(), margin + 165, y + 5);
+      resetColor();
+      y += 7;
+    });
+    y += 8;
+
+    // ── Detailed results per category ────────────────────────────────────
+    for (const cat of cats) {
+      const items = byCategory[cat.key];
+      if (items.length === 0) continue;
+
+      checkY(20);
+      // Category header
+      doc.setFillColor(37, 99, 235);
+      doc.rect(margin, y, contentW, 9, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(11);
+      doc.text(cat.label + " Checks", margin + 3, y + 6.5);
+      resetColor();
+      y += 13;
+
+      for (const item of items) {
+        checkY(18);
+        const statusIcon = item.status === "pass" ? "✓" : item.status === "fail" ? "✗" : "⚠";
+        const bgR = item.status === "pass" ? 240 : item.status === "fail" ? 254 : 254;
+        const bgG = item.status === "pass" ? 253 : item.status === "fail" ? 226 : 249;
+        const bgB = item.status === "pass" ? 244 : item.status === "fail" ? 226 : 195;
+
+        // Left accent bar
+        setColor(item.status);
+        doc.setFillColor(item.status === "pass" ? 22 : item.status === "fail" ? 220 : 202,
+          item.status === "pass" ? 163 : item.status === "fail" ? 38 : 138,
+          item.status === "pass" ? 74 : item.status === "fail" ? 38 : 4);
+        doc.rect(margin, y, 2, 14, "F");
+
+        // Row background
+        doc.setFillColor(bgR, bgG, bgB);
+        doc.rect(margin + 2, y, contentW - 2, 14, "F");
+
+        // Check name
+        resetColor();
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "bold");
+        doc.text(`${statusIcon} ${item.check_name}`, margin + 5, y + 5);
+        doc.setFont("helvetica", "normal");
+
+        // Severity badge
+        doc.setFontSize(7);
+        doc.setTextColor(100, 116, 139);
+        doc.text(`[${item.severity.toUpperCase()}]`, margin + contentW - 20, y + 5);
+
+        // Message
+        doc.setFontSize(8);
+        resetColor();
+        const msgLines = doc.splitTextToSize(item.message, contentW - 25);
+        doc.text(msgLines.slice(0, 1), margin + 5, y + 10);
+        y += 15;
+
+        // Fix recommendation
+        if (item.fix_recommendation && item.status !== "pass") {
+          checkY(14);
+          doc.setFillColor(239, 246, 255);
+          doc.rect(margin + 2, y, contentW - 2, 12, "F");
+          doc.setFontSize(7);
+          doc.setTextColor(37, 99, 235);
+          doc.text("HOW TO FIX:", margin + 5, y + 4);
+          doc.setTextColor(30, 58, 138);
+          const fixLines = doc.splitTextToSize(item.fix_recommendation, contentW - 20);
+          doc.text(fixLines.slice(0, 2), margin + 5, y + 9);
+          resetColor();
+          y += 14;
+        }
+        y += 2;
+      }
+      y += 4;
+    }
+
+    // ── Footer on last page ──────────────────────────────────────────────
+    const pageCount = doc.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFillColor(37, 99, 235);
+      doc.rect(0, 287, 210, 10, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(7);
+      doc.text("QA Testing System — Automated Report", margin, 293);
+      doc.text(`Page ${i} of ${pageCount}`, 180, 293);
+    }
+
+    doc.save(`qa-report-${run.id.slice(0, 8)}.pdf`);
+  }
+
+  const SUMMARY_CATS = [
+    { key: "responsive", label: "Responsive" },
+    { key: "functional", label: "Functional" },
+    { key: "accessibility", label: "A11y" },
+    { key: "performance", label: "Performance" },
+    { key: "security", label: "Security" },
+    { key: "seo", label: "SEO" },
+    { key: "compatibility", label: "Browser" },
+  ] as const;
+
+  const [pdfLoading, setPdfLoading] = useState(false);
+
+  async function handleDownloadPDF() {
+    setPdfLoading(true);
+    try {
+      await downloadPDF();
+    } finally {
+      setPdfLoading(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Globe className="h-4 w-4 text-muted-foreground shrink-0" />
+            <span className="font-medium text-sm break-all">{run.page_url}</span>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Clock className="h-3 w-3" />{new Date(run.created_at).toLocaleString()}
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <RunStatusBadge status={run.status} />
+            {run.status === "completed" && (
+              <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${overallPass ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400" : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"}`}>
+                {overallPass ? "All checks passed" : `${totalFails} failure${totalFails !== 1 ? "s" : ""}, ${totalWarnings} warning${totalWarnings !== 1 ? "s" : ""}`}
+              </span>
+            )}
+          </div>
+        </div>
+        <Button variant="outline" size="sm" onClick={handleDownloadPDF} disabled={pdfLoading} className="gap-2 shrink-0">
+          <Download className="h-4 w-4" />
+          {pdfLoading ? "Generating PDF..." : "Download PDF"}
+        </Button>
+      </div>
+
+      {/* Overall Score Card */}
+      {run.status === "completed" && run.overall_score !== null && (
+        <Card className="border-2">
+          <CardContent className="pt-6">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+              <div className="text-center md:text-left">
+                <p className="text-sm text-muted-foreground mb-1">Overall Quality Score</p>
+                <div className="flex items-baseline gap-2">
+                  <span className={`text-5xl font-bold ${
+                    run.overall_score >= 90 ? "text-green-600" :
+                    run.overall_score >= 70 ? "text-yellow-600" :
+                    run.overall_score >= 50 ? "text-orange-600" :
+                    "text-red-600"
+                  }`}>
+                    {run.overall_score}
+                  </span>
+                  <span className="text-2xl text-muted-foreground">/100</span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  {run.overall_score >= 90 ? "Excellent - Production ready" :
+                   run.overall_score >= 70 ? "Good - Minor improvements needed" :
+                   run.overall_score >= 50 ? "Fair - Several issues to address" :
+                   "Poor - Critical issues require attention"}
+                </p>
+              </div>
+              <div className="flex-1 max-w-md">
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                    <span>Score Breakdown</span>
+                    <span>{results.filter(r => r.status === "pass").length}/{results.length} checks passed</span>
+                  </div>
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden">
+                    <div 
+                      className={`h-full transition-all duration-500 ${
+                        run.overall_score >= 90 ? "bg-green-600" :
+                        run.overall_score >= 70 ? "bg-yellow-600" :
+                        run.overall_score >= 50 ? "bg-orange-600" :
+                        "bg-red-600"
+                      }`}
+                      style={{ width: `${run.overall_score}%` }}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
+                    <div className="flex items-center gap-1">
+                      <div className="w-2 h-2 rounded-full bg-green-600" />
+                      <span className="text-muted-foreground">90-100: Excellent</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="w-2 h-2 rounded-full bg-yellow-600" />
+                      <span className="text-muted-foreground">70-89: Good</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="w-2 h-2 rounded-full bg-orange-600" />
+                      <span className="text-muted-foreground">50-69: Fair</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="w-2 h-2 rounded-full bg-red-600" />
+                      <span className="text-muted-foreground">0-49: Poor</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Summary grid */}
+      {run.status === "completed" && (
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+          {SUMMARY_CATS.map(({ key, label }) => {
+            const items = byCategory[key];
+            const fails = items.filter((r) => r.status === "fail").length;
+            const warns = items.filter((r) => r.status === "warning").length;
+            return (
+              <Card key={key} className="text-center">
+                <CardContent className="pt-3 pb-2 px-2">
+                  <p className="text-xs text-muted-foreground mb-1">{label}</p>
+                  <p className="text-xl font-bold">
+                    {fails > 0 ? <span className="text-red-500">{fails}</span>
+                      : warns > 0 ? <span className="text-yellow-500">{warns}</span>
+                      : <span className="text-green-500">{items.length}</span>}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {fails > 0 ? `${fails} fail${fails !== 1 ? "s" : ""}` : warns > 0 ? `${warns} warn` : items.length === 0 ? "skipped" : "pass"}
+                  </p>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Tabs — 8 categories */}
+      <Tabs defaultValue="responsive">
+        <TabsList className="flex flex-wrap h-auto gap-1 p-1">
+          <TabsTrigger value="responsive" className="text-xs">Responsive</TabsTrigger>
+          <TabsTrigger value="functional" className="text-xs">Functional</TabsTrigger>
+          <TabsTrigger value="accessibility" className="text-xs">Accessibility</TabsTrigger>
+          <TabsTrigger value="performance" className="text-xs">Performance</TabsTrigger>
+          <TabsTrigger value="security" className="text-xs">Security</TabsTrigger>
+          <TabsTrigger value="seo" className="text-xs">SEO</TabsTrigger>
+          <TabsTrigger value="compatibility" className="text-xs">Cross-Browser</TabsTrigger>
+          <TabsTrigger value="visual" className="text-xs">Visual</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="responsive" className="space-y-3 mt-4">
+          <CategoryHeader results={byCategory.responsive} />
+          {byCategory.responsive.length === 0 ? <EmptyState label="responsive" /> : byCategory.responsive.map((r) => <ResultCard key={r.id} result={r} />)}
+        </TabsContent>
+
+        <TabsContent value="functional" className="space-y-3 mt-4">
+          <CategoryHeader results={byCategory.functional} />
+          {byCategory.functional.length === 0 ? <EmptyState label="functional" /> : byCategory.functional.map((r) => <ResultCard key={r.id} result={r} />)}
+        </TabsContent>
+
+        <TabsContent value="accessibility" className="space-y-3 mt-4">
+          <CategoryHeader results={byCategory.accessibility} />
+          {byCategory.accessibility.length === 0 ? <EmptyState label="accessibility" /> : (
+            <Accordion type="multiple" className="space-y-2">
+              {byCategory.accessibility.map((r) => (
+                <AccordionItem key={r.id} value={r.id} className="border rounded-lg px-4">
+                  <AccordionTrigger className="hover:no-underline py-3">
+                    <div className="flex items-center gap-3 text-left w-full pr-2">
+                      <StatusIcon status={r.status} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium">{r.check_name}</p>
+                        <p className="text-xs text-muted-foreground line-clamp-1">{r.message}</p>
+                      </div>
+                      <SeverityBadge severity={r.severity} />
+                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent className="pb-4 space-y-3">
+                    <p className="text-sm text-muted-foreground">{r.message}</p>
+                    {r.fix_recommendation && r.status !== "pass" && <FixCard recommendation={r.fix_recommendation} />}
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
+          )}
+        </TabsContent>
+
+        <TabsContent value="performance" className="space-y-3 mt-4">
+          <CategoryHeader results={byCategory.performance} />
+          {byCategory.performance.length === 0 ? <EmptyState label="performance" /> : byCategory.performance.map((r) => <ResultCard key={r.id} result={r} />)}
+        </TabsContent>
+
+        <TabsContent value="security" className="space-y-3 mt-4">
+          <CategoryHeader results={byCategory.security} />
+          {byCategory.security.length === 0 ? <EmptyState label="security" /> : byCategory.security.map((r) => <ResultCard key={r.id} result={r} />)}
+        </TabsContent>
+
+        <TabsContent value="seo" className="space-y-3 mt-4">
+          <CategoryHeader results={byCategory.seo} />
+          {byCategory.seo.length === 0 ? <EmptyState label="SEO" /> : byCategory.seo.map((r) => <ResultCard key={r.id} result={r} />)}
+        </TabsContent>
+
+        <TabsContent value="compatibility" className="space-y-3 mt-4">
+          <CategoryHeader results={byCategory.compatibility} />
+          {byCategory.compatibility.length === 0 ? <EmptyState label="cross-browser" /> : byCategory.compatibility.map((r) => <ResultCard key={r.id} result={r} />)}
+        </TabsContent>
+
+        <TabsContent value="visual" className="mt-4">
+          {screenshots.length === 0 ? <EmptyState label="visual" /> : (
+            <div className="grid md:grid-cols-3 gap-4">
+              {screenshots.map((s) => (
+                <Card key={s.id}>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <ViewportIcon viewport={s.viewport} />
+                      {s.viewport.charAt(0).toUpperCase() + s.viewport.slice(1)}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="relative aspect-[9/16] w-full overflow-hidden rounded-md border bg-muted">
+                      <Image src={s.image_url} alt={`${s.viewport} screenshot`} fill className="object-cover object-top" sizes="(max-width: 768px) 100vw, 33vw" />
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2 text-center">{new Date(s.created_at).toLocaleTimeString()}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+function CategoryHeader({ results }: { results: TestResult[] }) {
+  const passes = results.filter((r) => r.status === "pass").length;
+  const fails = results.filter((r) => r.status === "fail").length;
+  const warnings = results.filter((r) => r.status === "warning").length;
+  if (results.length === 0) return null;
+  return (
+    <div className="flex items-center gap-3 text-sm text-muted-foreground pb-1">
+      <span className="text-green-600 font-medium">{passes} passed</span>
+      {fails > 0 && <span className="text-red-600 font-medium">{fails} failed</span>}
+      {warnings > 0 && <span className="text-yellow-600 font-medium">{warnings} warnings</span>}
+    </div>
+  );
+}
+
+function ResultCard({ result }: { result: TestResult }) {
+  const [open, setOpen] = useState(false);
+  const hasFix = !!result.fix_recommendation && result.status !== "pass";
+  return (
+    <Card className={`border-l-4 ${result.status === "pass" ? "border-l-green-500" : result.status === "fail" ? "border-l-red-500" : "border-l-yellow-500"}`}>
+      <CardContent className="py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3 min-w-0">
+            <StatusIcon status={result.status} />
+            <div className="min-w-0">
+              <p className="text-sm font-medium">{result.check_name}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{result.message}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <SeverityBadge severity={result.severity} />
+            {hasFix && (
+              <Button variant="ghost" size="sm" onClick={() => setOpen(!open)} className="gap-1 text-xs h-7">
+                <Wrench className="h-3 w-3" />How to fix
+              </Button>
+            )}
+          </div>
+        </div>
+        {open && hasFix && <div className="mt-3"><FixCard recommendation={result.fix_recommendation!} /></div>}
+      </CardContent>
+    </Card>
+  );
+}
+
+function FixCard({ recommendation }: { recommendation: string }) {
+  return (
+    <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md p-3">
+      <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 mb-1 flex items-center gap-1">
+        <Wrench className="h-3 w-3" />How to fix
+      </p>
+      <p className="text-xs text-blue-800 dark:text-blue-300">{recommendation}</p>
+    </div>
+  );
+}
+
+function StatusIcon({ status }: { status: ResultStatus }) {
+  if (status === "pass") return <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0 mt-0.5" />;
+  if (status === "fail") return <XCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />;
+  return <AlertTriangle className="h-4 w-4 text-yellow-500 shrink-0 mt-0.5" />;
+}
+
+function SeverityBadge({ severity }: { severity: Severity }) {
+  const map: Record<Severity, string> = {
+    critical: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+    medium: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
+    low: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
+  };
+  return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${map[severity]}`}>{severity}</span>;
+}
+
+function RunStatusBadge({ status }: { status: string }) {
+  const map: Record<string, string> = {
+    completed: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+    failed: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
+    running: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
+    pending: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400",
+  };
+  return <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${map[status] || map.pending}`}>{status.charAt(0).toUpperCase() + status.slice(1)}</span>;
+}
+
+function ViewportIcon({ viewport }: { viewport: string }) {
+  if (viewport === "mobile") return <Smartphone className="h-4 w-4" />;
+  if (viewport === "tablet") return <Tablet className="h-4 w-4" />;
+  return <Monitor className="h-4 w-4" />;
+}
+
+function EmptyState({ label }: { label: string }) {
+  return (
+    <Card>
+      <CardContent className="py-10 text-center text-muted-foreground text-sm">
+        No {label} checks were run.
+      </CardContent>
+    </Card>
+  );
+}
