@@ -18,14 +18,11 @@ export function ReportView({ report }: ReportViewProps) {
   const overallPass = totalFails === 0;
 
   const byCategory = {
-    responsive: results.filter((r) => r.category === "responsive"),
-    functional: results.filter((r) => r.category === "functional"),
-    accessibility: results.filter((r) => r.category === "accessibility"),
-    visual: results.filter((r) => r.category === "visual"),
     performance: results.filter((r) => r.category === "performance"),
-    security: results.filter((r) => r.category === "security"),
-    seo: results.filter((r) => r.category === "seo"),
+    broken_links: results.filter((r) => r.category === "broken_links"),
     compatibility: results.filter((r) => r.category === "compatibility"),
+    security: results.filter((r) => r.category === "security"),
+    others: results.filter((r) => r.category === "others"),
   };
 
   async function downloadPDF() {
@@ -141,13 +138,11 @@ export function ReportView({ report }: ReportViewProps) {
     doc.text("Results by Category", margin, y);
     y += 6;
     const cats = [
-      { key: "responsive", label: "Responsive" },
-      { key: "functional", label: "Functional" },
-      { key: "accessibility", label: "Accessibility" },
       { key: "performance", label: "Performance" },
-      { key: "security", label: "Security" },
-      { key: "seo", label: "SEO" },
+      { key: "broken_links", label: "Broken Links" },
       { key: "compatibility", label: "Cross-Browser" },
+      { key: "security", label: "Security" },
+      { key: "others", label: "Others" },
     ] as const;
 
     // Table header
@@ -274,13 +269,11 @@ export function ReportView({ report }: ReportViewProps) {
   }
 
   const SUMMARY_CATS = [
-    { key: "responsive", label: "Responsive" },
-    { key: "functional", label: "Functional" },
-    { key: "accessibility", label: "A11y" },
     { key: "performance", label: "Performance" },
-    { key: "security", label: "Security" },
-    { key: "seo", label: "SEO" },
+    { key: "broken_links", label: "Links" },
     { key: "compatibility", label: "Browser" },
+    { key: "security", label: "Security" },
+    { key: "others", label: "Others" },
   ] as const;
 
   const [pdfLoading, setPdfLoading] = useState(false);
@@ -390,7 +383,7 @@ export function ReportView({ report }: ReportViewProps) {
 
       {/* Summary grid */}
       {run.status === "completed" && (
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
           {SUMMARY_CATS.map(({ key, label }) => {
             const items = byCategory[key];
             const fails = items.filter((r) => r.status === "fail").length;
@@ -414,68 +407,24 @@ export function ReportView({ report }: ReportViewProps) {
         </div>
       )}
 
-      {/* Tabs — 8 categories */}
-      <Tabs defaultValue="responsive">
+      {/* Tabs — 5 categories */}
+      <Tabs defaultValue="performance">
         <TabsList className="flex flex-wrap h-auto gap-1 p-1">
-          <TabsTrigger value="responsive" className="text-xs">Responsive</TabsTrigger>
-          <TabsTrigger value="functional" className="text-xs">Functional</TabsTrigger>
-          <TabsTrigger value="accessibility" className="text-xs">Accessibility</TabsTrigger>
           <TabsTrigger value="performance" className="text-xs">Performance</TabsTrigger>
-          <TabsTrigger value="security" className="text-xs">Security</TabsTrigger>
-          <TabsTrigger value="seo" className="text-xs">SEO</TabsTrigger>
+          <TabsTrigger value="broken_links" className="text-xs">Broken Links</TabsTrigger>
           <TabsTrigger value="compatibility" className="text-xs">Cross-Browser</TabsTrigger>
-          <TabsTrigger value="visual" className="text-xs">Visual</TabsTrigger>
+          <TabsTrigger value="security" className="text-xs">Security</TabsTrigger>
+          <TabsTrigger value="others" className="text-xs">Others</TabsTrigger>
         </TabsList>
-
-        <TabsContent value="responsive" className="space-y-3 mt-4">
-          <CategoryHeader results={byCategory.responsive} />
-          {byCategory.responsive.length === 0 ? <EmptyState label="responsive" /> : byCategory.responsive.map((r) => <ResultCard key={r.id} result={r} />)}
-        </TabsContent>
-
-        <TabsContent value="functional" className="space-y-3 mt-4">
-          <CategoryHeader results={byCategory.functional} />
-          {byCategory.functional.length === 0 ? <EmptyState label="functional" /> : byCategory.functional.map((r) => <ResultCard key={r.id} result={r} />)}
-        </TabsContent>
-
-        <TabsContent value="accessibility" className="space-y-3 mt-4">
-          <CategoryHeader results={byCategory.accessibility} />
-          {byCategory.accessibility.length === 0 ? <EmptyState label="accessibility" /> : (
-            <Accordion type="multiple" className="space-y-2">
-              {byCategory.accessibility.map((r) => (
-                <AccordionItem key={r.id} value={r.id} className="border rounded-lg px-4">
-                  <AccordionTrigger className="hover:no-underline py-3">
-                    <div className="flex items-center gap-3 text-left w-full pr-2">
-                      <StatusIcon status={r.status} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium">{r.check_name}</p>
-                        <p className="text-xs text-muted-foreground line-clamp-1">{r.message}</p>
-                      </div>
-                      <SeverityBadge severity={r.severity} />
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent className="pb-4 space-y-3">
-                    <p className="text-sm text-muted-foreground">{r.message}</p>
-                    {r.fix_recommendation && r.status !== "pass" && <FixCard recommendation={r.fix_recommendation} />}
-                  </AccordionContent>
-                </AccordionItem>
-              ))}
-            </Accordion>
-          )}
-        </TabsContent>
 
         <TabsContent value="performance" className="space-y-3 mt-4">
           <CategoryHeader results={byCategory.performance} />
           {byCategory.performance.length === 0 ? <EmptyState label="performance" /> : byCategory.performance.map((r) => <ResultCard key={r.id} result={r} />)}
         </TabsContent>
 
-        <TabsContent value="security" className="space-y-3 mt-4">
-          <CategoryHeader results={byCategory.security} />
-          {byCategory.security.length === 0 ? <EmptyState label="security" /> : byCategory.security.map((r) => <ResultCard key={r.id} result={r} />)}
-        </TabsContent>
-
-        <TabsContent value="seo" className="space-y-3 mt-4">
-          <CategoryHeader results={byCategory.seo} />
-          {byCategory.seo.length === 0 ? <EmptyState label="SEO" /> : byCategory.seo.map((r) => <ResultCard key={r.id} result={r} />)}
+        <TabsContent value="broken_links" className="space-y-3 mt-4">
+          <CategoryHeader results={byCategory.broken_links} />
+          {byCategory.broken_links.length === 0 ? <EmptyState label="broken links" /> : byCategory.broken_links.map((r) => <ResultCard key={r.id} result={r} />)}
         </TabsContent>
 
         <TabsContent value="compatibility" className="space-y-3 mt-4">
@@ -483,26 +432,17 @@ export function ReportView({ report }: ReportViewProps) {
           {byCategory.compatibility.length === 0 ? <EmptyState label="cross-browser" /> : byCategory.compatibility.map((r) => <ResultCard key={r.id} result={r} />)}
         </TabsContent>
 
-        <TabsContent value="visual" className="mt-4">
-          {screenshots.length === 0 ? <EmptyState label="visual" /> : (
-            <div className="grid md:grid-cols-3 gap-4">
-              {screenshots.map((s) => (
-                <Card key={s.id}>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm flex items-center gap-2">
-                      <ViewportIcon viewport={s.viewport} />
-                      {s.viewport.charAt(0).toUpperCase() + s.viewport.slice(1)}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="relative aspect-[9/16] w-full overflow-hidden rounded-md border bg-muted">
-                      <Image src={s.image_url} alt={`${s.viewport} screenshot`} fill className="object-cover object-top" sizes="(max-width: 768px) 100vw, 33vw" />
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-2 text-center">{new Date(s.created_at).toLocaleTimeString()}</p>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+        <TabsContent value="security" className="space-y-3 mt-4">
+          <CategoryHeader results={byCategory.security} />
+          {byCategory.security.length === 0 ? <EmptyState label="security" /> : byCategory.security.map((r) => <ResultCard key={r.id} result={r} />)}
+        </TabsContent>
+
+        <TabsContent value="others" className="space-y-3 mt-4">
+          <CategoryHeader results={byCategory.others} />
+          {byCategory.others.length === 0 ? (
+            <EmptyState label="other checks (SEO, Accessibility, Responsive, Visual)" />
+          ) : (
+            <OthersTabContent results={byCategory.others} />
           )}
         </TabsContent>
       </Tabs>
@@ -604,3 +544,87 @@ function EmptyState({ label }: { label: string }) {
     </Card>
   );
 }
+
+function OthersTabContent({ results }: { results: TestResult[] }) {
+  // Categorize "others" results by sub-category
+  const seoChecks = ["Page Title", "Meta Description", "Open Graph Tags", "Canonical URL", "HTML Lang Attribute", "H1 Heading", "Structured Data (JSON-LD)"];
+  const accessibilityChecks = ["axe-core Scan", "Keyboard Navigable Elements"];
+  const responsiveChecks = ["Viewport Meta Tag", "Horizontal Overflow", "Font Size", "Touch Target Size"];
+  const visualChecks = ["Screenshot"];
+
+  const categorizeResult = (result: TestResult) => {
+    if (seoChecks.some(check => result.check_name.includes(check))) return "seo";
+    if (accessibilityChecks.some(check => result.check_name.includes(check))) return "accessibility";
+    if (responsiveChecks.some(check => result.check_name.includes(check))) return "responsive";
+    if (visualChecks.some(check => result.check_name.includes(check))) return "visual";
+    // Check for axe-core violation IDs (they don't match the check names above)
+    if (result.check_name.includes("element") || result.check_name.includes("aria") || result.check_name.includes("color") || result.check_name.includes("label")) {
+      return "accessibility";
+    }
+    return "other";
+  };
+
+  const bySubCategory = {
+    seo: results.filter(r => categorizeResult(r) === "seo"),
+    accessibility: results.filter(r => categorizeResult(r) === "accessibility"),
+    responsive: results.filter(r => categorizeResult(r) === "responsive"),
+    visual: results.filter(r => categorizeResult(r) === "visual"),
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* SEO Section */}
+      {bySubCategory.seo.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 pb-2 border-b">
+            <h3 className="text-sm font-semibold text-primary">📊 SEO Checks</h3>
+            <span className="text-xs text-muted-foreground">
+              ({bySubCategory.seo.filter(r => r.status === "pass").length}/{bySubCategory.seo.length} passed)
+            </span>
+          </div>
+          {bySubCategory.seo.map((r) => <ResultCard key={r.id} result={r} />)}
+        </div>
+      )}
+
+      {/* Accessibility Section */}
+      {bySubCategory.accessibility.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 pb-2 border-b">
+            <h3 className="text-sm font-semibold text-primary">♿ Accessibility Checks</h3>
+            <span className="text-xs text-muted-foreground">
+              ({bySubCategory.accessibility.filter(r => r.status === "pass").length}/{bySubCategory.accessibility.length} passed)
+            </span>
+          </div>
+          {bySubCategory.accessibility.map((r) => <ResultCard key={r.id} result={r} />)}
+        </div>
+      )}
+
+      {/* Responsive Section */}
+      {bySubCategory.responsive.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 pb-2 border-b">
+            <h3 className="text-sm font-semibold text-primary">📱 Responsive Design Checks</h3>
+            <span className="text-xs text-muted-foreground">
+              ({bySubCategory.responsive.filter(r => r.status === "pass").length}/{bySubCategory.responsive.length} passed)
+            </span>
+          </div>
+          {bySubCategory.responsive.map((r) => <ResultCard key={r.id} result={r} />)}
+        </div>
+      )}
+
+      {/* Visual Section */}
+      {bySubCategory.visual.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 pb-2 border-b">
+            <h3 className="text-sm font-semibold text-primary">📸 Visual Screenshots</h3>
+            <span className="text-xs text-muted-foreground">
+              ({bySubCategory.visual.length} screenshot{bySubCategory.visual.length !== 1 ? 's' : ''})
+            </span>
+          </div>
+          {bySubCategory.visual.map((r) => <ResultCard key={r.id} result={r} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
