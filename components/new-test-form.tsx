@@ -16,14 +16,11 @@ const VIEWPORTS: { id: Viewport; label: string; desc: string }[] = [
 ];
 
 const CHECKS = [
-  { id: "responsive", label: "Responsive Layout", desc: "Overflow, font size, touch targets, viewport meta" },
-  { id: "functional", label: "Functional QA", desc: "Buttons, broken links (HTTP), forms, JS errors" },
-  { id: "accessibility", label: "Accessibility (axe-core)", desc: "WCAG violations, keyboard navigation" },
-  { id: "visual", label: "Visual Screenshots", desc: "Capture screenshots at each viewport" },
-  { id: "performance", label: "Performance (Lighthouse)", desc: "LCP, FCP, TTFB, CLS, TBT, Speed Index" },
-  { id: "security", label: "Security Headers", desc: "HTTPS, CSP, HSTS, X-Frame-Options, cookies" },
-  { id: "seo", label: "SEO Audit", desc: "Title, meta, OG tags, canonical, lang, H1, sitemap" },
-  { id: "compatibility", label: "Cross-Browser Testing", desc: "Test on Chrome, Firefox, Safari (WebKit)" },
+  { id: "performance", label: "Performance Testing", desc: "Lighthouse: LCP, FCP, TTFB, CLS, TBT, Speed Index, TTI" },
+  { id: "broken_links", label: "Broken Links", desc: "Check all links for 404, 410, 500+ errors (up to 30 links)" },
+  { id: "compatibility", label: "Cross-Browser Testing", desc: "Test on Chrome, Firefox, Safari - layout & JS errors" },
+  { id: "security", label: "Security Headers", desc: "HTTPS, CSP, HSTS, X-Frame-Options, cookies, referrer policy" },
+  { id: "others", label: "Others (SEO, Accessibility, Responsive)", desc: "Additional checks: SEO tags, WCAG compliance, responsive design, visual screenshots" },
 ] as const;
 
 type CheckId = (typeof CHECKS)[number]["id"];
@@ -31,10 +28,15 @@ type CheckId = (typeof CHECKS)[number]["id"];
 export function NewTestForm({ prefillUrl }: { prefillUrl?: string }) {
   const router = useRouter();
   const [url, setUrl] = useState(prefillUrl || "");
+  const [multipleMode, setMultipleMode] = useState(false);
+  const [urls, setUrls] = useState("");
   const [viewports, setViewports] = useState<Viewport[]>(["mobile", "tablet", "desktop"]);
   const [checks, setChecks] = useState<Record<CheckId, boolean>>({
-    responsive: true, functional: true, accessibility: true, visual: true,
-    performance: true, security: true, seo: true, compatibility: true,
+    performance: true,
+    broken_links: true,
+    compatibility: true,
+    security: true,
+    others: false,
   });
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -50,31 +52,66 @@ export function NewTestForm({ prefillUrl }: { prefillUrl?: string }) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!url.trim()) return;
+    
+    // Get URLs based on mode
+    const urlsToTest = multipleMode 
+      ? urls.split('\n').map(u => u.trim()).filter(u => u.length > 0)
+      : [url.trim()];
+    
+    if (urlsToTest.length === 0) { 
+      setError("Enter at least one URL."); 
+      return; 
+    }
     if (viewports.length === 0) { setError("Select at least one viewport."); return; }
     if (!Object.values(checks).some(Boolean)) { setError("Select at least one check."); return; }
-    setLoading(true); setError(""); setProgress(10); setStatusMsg("Starting test...");
+    
+    setLoading(true); setError(""); setProgress(10); 
+    setStatusMsg(`Starting test${urlsToTest.length > 1 ? `s for ${urlsToTest.length} URLs` : ''}...`);
+    
     try {
-      const res = await fetch("/api/test/run", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: url.trim(), viewports, checks }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to start test");
-      const testRunId = data.testRunId;
-      setProgress(20); setStatusMsg("Test running...");
+      const testRunIds: string[] = [];
+      
+      // Submit all URLs
+      for (let i = 0; i < urlsToTest.length; i++) {
+        const testUrl = urlsToTest[i];
+        setStatusMsg(`Submitting test ${i + 1}/${urlsToTest.length}: ${testUrl.slice(0, 40)}...`);
+        
+        const res = await fetch("/api/test/run", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: testUrl, viewports, checks }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `Failed to start test for ${testUrl}`);
+        testRunIds.push(data.testRunId);
+        setProgress(10 + (i + 1) * (10 / urlsToTest.length));
+      }
+      
+      setProgress(20); setStatusMsg(`Running ${testRunIds.length} test${testRunIds.length > 1 ? 's' : ''}...`);
+      
+      // Poll all tests
       const poll = setInterval(async () => {
-        const statusRes = await fetch(`/api/test/status/${testRunId}`);
-        const statusData = await statusRes.json();
-        if (statusData.status === "completed") {
-          clearInterval(poll); setProgress(100); setStatusMsg("Complete! Redirecting...");
-          setTimeout(() => router.push(`/test/${testRunId}`), 800);
-        } else if (statusData.status === "failed") {
+        const statuses = await Promise.all(
+          testRunIds.map(id => fetch(`/api/test/status/${id}`).then(r => r.json()))
+        );
+        
+        const completed = statuses.filter(s => s.status === "completed").length;
+        const failed = statuses.filter(s => s.status === "failed").length;
+        const running = statuses.length - completed - failed;
+        
+        setProgress(20 + (completed / statuses.length) * 70);
+        setStatusMsg(`${completed} completed, ${running} running${failed > 0 ? `, ${failed} failed` : ''}`);
+        
+        if (completed + failed === statuses.length) {
           clearInterval(poll);
-          setError(statusData.error || "Test failed. The URL may be unreachable.");
-          setLoading(false); setProgress(0);
-        } else {
-          setProgress((p) => Math.min(p + 7, 90));
+          setProgress(100);
+          
+          if (testRunIds.length === 1) {
+            setStatusMsg("Complete! Redirecting...");
+            setTimeout(() => router.push(`/test/${testRunIds[0]}`), 800);
+          } else {
+            setStatusMsg(`All tests complete! ${completed} succeeded, ${failed} failed.`);
+            setTimeout(() => router.push(`/dashboard`), 2000);
+          }
         }
       }, 2000);
     } catch (err: unknown) {
@@ -86,10 +123,46 @@ export function NewTestForm({ prefillUrl }: { prefillUrl?: string }) {
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <Card>
-        <CardHeader><CardTitle className="text-base">Target URL</CardTitle></CardHeader>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">Target URL{multipleMode ? 's' : ''}</CardTitle>
+            <button
+              type="button"
+              onClick={() => setMultipleMode(!multipleMode)}
+              disabled={loading}
+              className="text-xs text-primary hover:underline"
+            >
+              {multipleMode ? 'Single URL' : 'Multiple URLs'}
+            </button>
+          </div>
+        </CardHeader>
         <CardContent>
-          <Input type="url" placeholder="https://example.com" value={url}
-            onChange={(e) => setUrl(e.target.value)} required disabled={loading} className="text-base" />
+          {multipleMode ? (
+            <div className="space-y-2">
+              <textarea
+                placeholder="Enter URLs (one per line):&#10;https://example.com&#10;https://another-site.com&#10;https://third-site.com"
+                value={urls}
+                onChange={(e) => setUrls(e.target.value)}
+                required
+                disabled={loading}
+                rows={6}
+                className="w-full px-3 py-2 text-sm border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+              <p className="text-xs text-muted-foreground">
+                {urls.split('\n').filter(u => u.trim()).length} URL(s) entered
+              </p>
+            </div>
+          ) : (
+            <Input 
+              type="url" 
+              placeholder="https://example.com" 
+              value={url}
+              onChange={(e) => setUrl(e.target.value)} 
+              required 
+              disabled={loading} 
+              className="text-base" 
+            />
+          )}
         </CardContent>
       </Card>
 

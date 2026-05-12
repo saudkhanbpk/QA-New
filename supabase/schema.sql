@@ -23,7 +23,7 @@ create table public.test_runs (
 create table public.test_results (
   id uuid primary key default uuid_generate_v4(),
   test_run_id uuid references public.test_runs(id) on delete cascade not null,
-  category text not null check (category in ('responsive','functional','accessibility','visual','performance','security','seo','compatibility')),
+  category text not null,
   check_name text not null,
   status text not null check (status in ('pass','fail','warning')),
   severity text not null check (severity in ('critical','medium','low')),
@@ -32,6 +32,10 @@ create table public.test_results (
   screenshot_url text,
   created_at timestamptz default now()
 );
+
+-- Note: Category constraint removed to allow flexible category values
+-- Current categories: performance, broken_links, compatibility, security, others
+-- Application-level validation handles category checking
 
 -- Screenshots table
 create table public.screenshots (

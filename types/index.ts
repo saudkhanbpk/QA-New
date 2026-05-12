@@ -2,14 +2,11 @@ export type TestStatus = "pending" | "running" | "completed" | "failed";
 export type ResultStatus = "pass" | "fail" | "warning";
 export type Severity = "critical" | "medium" | "low";
 export type Category =
-  | "responsive"
-  | "functional"
-  | "accessibility"
-  | "visual"
   | "performance"
+  | "broken_links"
+  | "compatibility"
   | "security"
-  | "seo"
-  | "compatibility";
+  | "others";
 export type Viewport = "mobile" | "tablet" | "desktop";
 export type Browser = "chromium" | "firefox" | "webkit";
 
@@ -60,13 +57,10 @@ export interface RunTestPayload {
   url: string;
   viewports: Viewport[];
   checks: {
-    responsive: boolean;
-    functional: boolean;
-    accessibility: boolean;
-    visual: boolean;
     performance: boolean;
-    security: boolean;
-    seo: boolean;
+    broken_links: boolean;
     compatibility: boolean;
+    security: boolean;
+    others: boolean;
   };
 }
