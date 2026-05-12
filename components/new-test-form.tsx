@@ -148,10 +148,14 @@ export function NewTestForm({ prefillUrl }: { prefillUrl?: string }) {
               
               if (testRunIds.length === 1) {
                 setStatusMsg("Complete! Redirecting...");
-                setTimeout(() => router.push(`/test/${testRunIds[0]}`), 800);
+                setTimeout(() => {
+                  window.location.href = `/test/${testRunIds[0]}`;
+                }, 800);
               } else {
                 setStatusMsg(`All tests complete! ${completed} succeeded, ${failed} failed.`);
-                setTimeout(() => router.push(`/dashboard`), 2000);
+                setTimeout(() => {
+                  window.location.href = `/dashboard`;
+                }, 2000);
               }
             }
           } catch (err) {
