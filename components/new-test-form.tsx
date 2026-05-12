@@ -62,6 +62,13 @@ export function NewTestForm({ prefillUrl }: { prefillUrl?: string }) {
       setError("Enter at least one URL."); 
       return; 
     }
+    
+    // ⚡ Limit to 5 URLs for optimal performance
+    if (urlsToTest.length > 5) {
+      setError("Maximum 5 URLs allowed for parallel testing. Please reduce the number of URLs.");
+      return;
+    }
+    
     if (viewports.length === 0) { setError("Select at least one viewport."); return; }
     if (!Object.values(checks).some(Boolean)) { setError("Select at least one check."); return; }
     
@@ -71,49 +78,98 @@ export function NewTestForm({ prefillUrl }: { prefillUrl?: string }) {
     try {
       const testRunIds: string[] = [];
       
-      // Submit all URLs
-      for (let i = 0; i < urlsToTest.length; i++) {
-        const testUrl = urlsToTest[i];
-        setStatusMsg(`Submitting test ${i + 1}/${urlsToTest.length}: ${testUrl.slice(0, 40)}...`);
-        
-        const res = await fetch("/api/test/run", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: testUrl, viewports, checks }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || `Failed to start test for ${testUrl}`);
-        testRunIds.push(data.testRunId);
-        setProgress(10 + (i + 1) * (10 / urlsToTest.length));
+      // ⚡ Submit all URLs in parallel (much faster than sequential)
+      setStatusMsg(`Submitting ${urlsToTest.length} test${urlsToTest.length > 1 ? 's' : ''} in parallel...`);
+      
+      const submissions = await Promise.allSettled(
+        urlsToTest.map(testUrl => 
+          fetch("/api/test/run", {
+            method: "POST", 
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: testUrl, viewports, checks }),
+          }).then(async res => {
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || `Failed to start test for ${testUrl}`);
+            return { testRunId: data.testRunId, url: testUrl };
+          })
+        )
+      );
+      
+      // Collect successful submissions
+      const successful = submissions.filter(s => s.status === "fulfilled") as PromiseFulfilledResult<{ testRunId: string; url: string }>[];
+      const failed = submissions.filter(s => s.status === "rejected") as PromiseRejectedResult[];
+      
+      if (successful.length === 0) {
+        throw new Error("All test submissions failed");
       }
       
-      setProgress(20); setStatusMsg(`Running ${testRunIds.length} test${testRunIds.length > 1 ? 's' : ''}...`);
+      testRunIds.push(...successful.map(s => s.value.testRunId));
       
-      // Poll all tests
-      const poll = setInterval(async () => {
-        const statuses = await Promise.all(
-          testRunIds.map(id => fetch(`/api/test/status/${id}`).then(r => r.json()))
-        );
+      if (failed.length > 0) {
+        console.warn(`${failed.length} test(s) failed to submit:`, failed.map(f => f.reason));
+      }
+      
+      setProgress(20); 
+      setStatusMsg(`Running ${testRunIds.length} test${testRunIds.length > 1 ? 's' : ''} in parallel...`);
+      
+      // ⚡ Use Server-Sent Events (SSE) for real-time updates instead of polling
+      const eventSources: EventSource[] = [];
+      const testStatuses = new Map<string, string>();
+      
+      testRunIds.forEach(testRunId => {
+        const eventSource = new EventSource(`/api/test/stream?testRunId=${testRunId}`);
+        eventSources.push(eventSource);
         
-        const completed = statuses.filter(s => s.status === "completed").length;
-        const failed = statuses.filter(s => s.status === "failed").length;
-        const running = statuses.length - completed - failed;
-        
-        setProgress(20 + (completed / statuses.length) * 70);
-        setStatusMsg(`${completed} completed, ${running} running${failed > 0 ? `, ${failed} failed` : ''}`);
-        
-        if (completed + failed === statuses.length) {
-          clearInterval(poll);
-          setProgress(100);
-          
-          if (testRunIds.length === 1) {
-            setStatusMsg("Complete! Redirecting...");
-            setTimeout(() => router.push(`/test/${testRunIds[0]}`), 800);
-          } else {
-            setStatusMsg(`All tests complete! ${completed} succeeded, ${failed} failed.`);
-            setTimeout(() => router.push(`/dashboard`), 2000);
+        eventSource.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            
+            if (data.error) {
+              console.error(`Stream error for ${testRunId}:`, data.error);
+              testStatuses.set(testRunId, "failed");
+            } else {
+              testStatuses.set(testRunId, data.status);
+            }
+            
+            // Update progress
+            const completed = Array.from(testStatuses.values()).filter(s => s === "completed").length;
+            const failed = Array.from(testStatuses.values()).filter(s => s === "failed").length;
+            const running = testRunIds.length - completed - failed;
+            
+            setProgress(20 + (completed / testRunIds.length) * 70);
+            setStatusMsg(`${completed} completed, ${running} running${failed > 0 ? `, ${failed} failed` : ''}`);
+            
+            // Check if all tests are done
+            if (completed + failed === testRunIds.length) {
+              // Close all event sources
+              eventSources.forEach(es => es.close());
+              
+              setProgress(100);
+              
+              if (testRunIds.length === 1) {
+                setStatusMsg("Complete! Redirecting...");
+                setTimeout(() => router.push(`/test/${testRunIds[0]}`), 800);
+              } else {
+                setStatusMsg(`All tests complete! ${completed} succeeded, ${failed} failed.`);
+                setTimeout(() => router.push(`/dashboard`), 2000);
+              }
+            }
+          } catch (err) {
+            console.error("Failed to parse SSE data:", err);
           }
-        }
-      }, 2000);
+        };
+        
+        eventSource.onerror = (error) => {
+          console.error(`SSE error for ${testRunId}:`, error);
+          testStatuses.set(testRunId, "failed");
+          eventSource.close();
+        };
+      });
+      
+      // Cleanup on unmount
+      return () => {
+        eventSources.forEach(es => es.close());
+      };
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Something went wrong");
       setLoading(false); setProgress(0);
@@ -140,7 +196,7 @@ export function NewTestForm({ prefillUrl }: { prefillUrl?: string }) {
           {multipleMode ? (
             <div className="space-y-2">
               <textarea
-                placeholder="Enter URLs (one per line):&#10;https://example.com&#10;https://another-site.com&#10;https://third-site.com"
+                placeholder="Enter URLs (one per line, max 5):&#10;https://example.com&#10;https://another-site.com&#10;https://third-site.com"
                 value={urls}
                 onChange={(e) => setUrls(e.target.value)}
                 required
