@@ -25,7 +25,7 @@
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
     "lighthouse": "12.8.2",
-    "lucide-react": "^0.400.0",
+    "lucide-react": "^0.263.1",
     "next": "14.2.5",
     "playwright": "^1.45.1",
     "react": "^18",
@@ -34,7 +34,7 @@
     "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
-    "@types/node": "^20",
+    "@types/node": "^25.6.2",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "autoprefixer": "^10.5.0",
