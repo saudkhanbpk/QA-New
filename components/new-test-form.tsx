@@ -52,46 +52,46 @@ export function NewTestForm({ prefillUrl }: { prefillUrl?: string }) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    
+
     // Get URLs based on mode
-    const urlsToTest = multipleMode 
+    const urlsToTest = multipleMode
       ? urls.split('\n').map(u => u.trim()).filter(u => u.length > 0)
       : [url.trim()];
-    
-    if (urlsToTest.length === 0) { 
-      setError("Enter at least one URL."); 
-      return; 
-    }
-    
-    // ⚡ Limit to 5 URLs for optimal performance
-    if (urlsToTest.length > 5) {
-      setError("Maximum 5 URLs allowed for parallel testing. Please reduce the number of URLs.");
+
+    if (urlsToTest.length === 0) {
+      setError("Enter at least one URL.");
       return;
     }
-    
+
+    // ⚡ Limit to 5 URLs for optimal performance
+    // if (urlsToTest.length > 5) {
+    //   setError("Maximum 5 URLs allowed for parallel testing. Please reduce the number of URLs.");
+    //   return;
+    // }
+
     if (viewports.length === 0) { setError("Select at least one viewport."); return; }
     if (!Object.values(checks).some(Boolean)) { setError("Select at least one check."); return; }
-    
-    setLoading(true); setError(""); setProgress(10); 
+
+    setLoading(true); setError(""); setProgress(10);
     setStatusMsg(`Starting test${urlsToTest.length > 1 ? `s for ${urlsToTest.length} URLs` : ''}...`);
-    
+
     try {
       const testRunIds: string[] = [];
       // Generate batch ID for multiple URLs
       const batchId = urlsToTest.length > 1 ? crypto.randomUUID() : null;
       const batchName = urlsToTest.length > 1 ? `Batch Test - ${new Date().toLocaleString()}` : null;
-      
+
       // ⚡ Submit all URLs in parallel (much faster than sequential)
       setStatusMsg(`Submitting ${urlsToTest.length} test${urlsToTest.length > 1 ? 's' : ''} in parallel...`);
-      
+
       const submissions = await Promise.allSettled(
-        urlsToTest.map(testUrl => 
+        urlsToTest.map(testUrl =>
           fetch("/api/test/run", {
-            method: "POST", 
+            method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ 
-              url: testUrl, 
-              viewports, 
+            body: JSON.stringify({
+              url: testUrl,
+              viewports,
               checks,
               batchId,
               batchName
@@ -103,58 +103,58 @@ export function NewTestForm({ prefillUrl }: { prefillUrl?: string }) {
           })
         )
       );
-      
+
       // Collect successful submissions
       const successful = submissions.filter(s => s.status === "fulfilled") as PromiseFulfilledResult<{ testRunId: string; url: string }>[];
       const failed = submissions.filter(s => s.status === "rejected") as PromiseRejectedResult[];
-      
+
       if (successful.length === 0) {
         throw new Error("All test submissions failed");
       }
-      
+
       testRunIds.push(...successful.map(s => s.value.testRunId));
-      
+
       if (failed.length > 0) {
         console.warn(`${failed.length} test(s) failed to submit:`, failed.map(f => f.reason));
       }
-      
-      setProgress(20); 
+
+      setProgress(20);
       setStatusMsg(`Running ${testRunIds.length} test${testRunIds.length > 1 ? 's' : ''} in parallel...`);
-      
+
       // ⚡ Use Server-Sent Events (SSE) for real-time updates instead of polling
       const eventSources: EventSource[] = [];
       const testStatuses = new Map<string, string>();
-      
+
       testRunIds.forEach(testRunId => {
         const eventSource = new EventSource(`/api/test/stream?testRunId=${testRunId}`);
         eventSources.push(eventSource);
-        
+
         eventSource.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-            
+
             if (data.error) {
               console.error(`Stream error for ${testRunId}:`, data.error);
               testStatuses.set(testRunId, "failed");
             } else {
               testStatuses.set(testRunId, data.status);
             }
-            
+
             // Update progress
             const completed = Array.from(testStatuses.values()).filter(s => s === "completed").length;
             const failed = Array.from(testStatuses.values()).filter(s => s === "failed").length;
             const running = testRunIds.length - completed - failed;
-            
+
             setProgress(20 + (completed / testRunIds.length) * 70);
             setStatusMsg(`${completed} completed, ${running} running${failed > 0 ? `, ${failed} failed` : ''}`);
-            
+
             // Check if all tests are done
             if (completed + failed === testRunIds.length) {
               // Close all event sources
               eventSources.forEach(es => es.close());
-              
+
               setProgress(100);
-              
+
               if (testRunIds.length === 1) {
                 setStatusMsg("Complete! Redirecting...");
                 setTimeout(() => {
@@ -172,14 +172,14 @@ export function NewTestForm({ prefillUrl }: { prefillUrl?: string }) {
             console.error("Failed to parse SSE data:", err);
           }
         };
-        
+
         eventSource.onerror = (error) => {
           console.error(`SSE error for ${testRunId}:`, error);
           testStatuses.set(testRunId, "failed");
           eventSource.close();
         };
       });
-      
+
       // Cleanup on unmount
       return () => {
         eventSources.forEach(es => es.close());
@@ -223,14 +223,14 @@ export function NewTestForm({ prefillUrl }: { prefillUrl?: string }) {
               </p>
             </div>
           ) : (
-            <Input 
-              type="url" 
-              placeholder="https://example.com" 
+            <Input
+              type="url"
+              placeholder="https://example.com"
               value={url}
-              onChange={(e) => setUrl(e.target.value)} 
-              required 
-              disabled={loading} 
-              className="text-base" 
+              onChange={(e) => setUrl(e.target.value)}
+              required
+              disabled={loading}
+              className="text-base"
             />
           )}
         </CardContent>
@@ -241,9 +241,8 @@ export function NewTestForm({ prefillUrl }: { prefillUrl?: string }) {
         <CardContent className="flex gap-3 flex-wrap">
           {VIEWPORTS.map(({ id, label, desc }) => (
             <button key={id} type="button" onClick={() => toggleViewport(id)} disabled={loading}
-              className={`flex flex-col items-center px-5 py-3 rounded-lg border-2 transition-colors text-sm font-medium ${
-                viewports.includes(id) ? "border-primary bg-primary/5 text-primary" : "border-border text-muted-foreground hover:border-primary/50"
-              }`}>
+              className={`flex flex-col items-center px-5 py-3 rounded-lg border-2 transition-colors text-sm font-medium ${viewports.includes(id) ? "border-primary bg-primary/5 text-primary" : "border-border text-muted-foreground hover:border-primary/50"
+                }`}>
               <span>{label}</span>
               <span className="text-xs font-normal opacity-70">{desc}</span>
             </button>
@@ -255,9 +254,8 @@ export function NewTestForm({ prefillUrl }: { prefillUrl?: string }) {
         <CardHeader><CardTitle className="text-base">Checks to run</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           {CHECKS.map(({ id, label, desc }) => (
-            <label key={id} className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
-              checks[id] ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
-            } ${loading ? "opacity-50 cursor-not-allowed" : ""}`}>
+            <label key={id} className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${checks[id] ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
+              } ${loading ? "opacity-50 cursor-not-allowed" : ""}`}>
               <input type="checkbox" checked={checks[id]} onChange={() => toggleCheck(id)}
                 disabled={loading} className="mt-0.5 accent-primary" />
               <div>
