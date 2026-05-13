@@ -24,21 +24,78 @@ export default function RegisterPage() {
     setLoading(true);
     setError("");
 
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { emailRedirectTo: `${window.location.origin}/dashboard` },
-    });
+    try {
+      // First, check if email already exists
+      const checkResponse = await fetch("/api/auth/check-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
 
-    setLoading(false);
+      const checkData = await checkResponse.json();
 
-    if (error) {
-      setError(error.message);
-      return;
+      if (checkData.exists) {
+        if (checkData.verified) {
+          // Email exists and is verified - show error
+          setError("This email is already registered. Please sign in instead.");
+          setLoading(false);
+          return;
+        } else {
+          // Email exists but not verified - resend confirmation email
+          const { error: resendError } = await supabase.auth.resend({
+            type: "signup",
+            email,
+            options: {
+              emailRedirectTo: `${window.location.origin}/dashboard`,
+            },
+          });
+
+          setLoading(false);
+
+          if (resendError) {
+            setError(resendError.message);
+            return;
+          }
+
+          // Show success message
+          setEmailSent(true);
+          return;
+        }
+      }
+
+      // Email doesn't exist - proceed with registration
+      const isAdminAccount = email.toLowerCase() === "admin@autoqa.com";
+
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { 
+          emailRedirectTo: `${window.location.origin}/dashboard`,
+          data: {
+            email_verified: isAdminAccount
+          }
+        },
+      });
+
+      setLoading(false);
+
+      if (error) {
+        setError(error.message);
+        return;
+      }
+
+      // If admin account, redirect directly to login
+      if (isAdminAccount) {
+        router.push("/login?message=Admin account created. Please sign in.");
+        return;
+      }
+
+      // Show email confirmation message for regular users
+      setEmailSent(true);
+    } catch (error: any) {
+      setLoading(false);
+      setError("An error occurred. Please try again.");
     }
-
-    // Show success message
-    setEmailSent(true);
   }
 
   return (
@@ -74,7 +131,7 @@ export default function RegisterPage() {
               <p className="text-xs text-center text-muted-foreground">
                 Didn't receive the email? Check your spam folder or{" "}
                 <button 
-                  onClick={() => setEmailSent(false)} 
+                  onClick={() => { setEmailSent(false); setEmail(""); setPassword(""); }} 
                   className="text-primary hover:underline"
                 >
                   try again

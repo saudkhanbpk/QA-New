@@ -4,13 +4,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Bug, LogOut, LayoutDashboard, Plus } from "lucide-react";
+import { Bug, LogOut, LayoutDashboard, Plus, Shield } from "lucide-react";
 
 interface NavbarProps {
   userEmail?: string | null;
+  isAdmin?: boolean;
 }
 
-export function Navbar({ userEmail }: NavbarProps) {
+export function Navbar({ userEmail, isAdmin }: NavbarProps) {
   const router = useRouter();
   const supabase = createClient();
 
@@ -37,6 +38,14 @@ export function Navbar({ userEmail }: NavbarProps) {
                   Dashboard
                 </Button>
               </Link>
+              {isAdmin && (
+                <Link href="/admin">
+                  <Button variant="ghost" size="sm" className="gap-1">
+                    <Shield className="h-4 w-4" />
+                    Admin
+                  </Button>
+                </Link>
+              )}
               <Link href="/test/new">
                 <Button size="sm" className="gap-1">
                   <Plus className="h-4 w-4" />

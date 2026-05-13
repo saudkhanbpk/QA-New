@@ -10,11 +10,20 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, Globe, Clock, ArrowRight, FileText } from "lucide-react";
 import type { TestRun } from "@/types";
 
+// List of super admin email addresses
+const SUPER_ADMINS = [
+  "admin@autoqa.com",
+];
+
 export default async function DashboardPage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) redirect("/login");
+
+  // Check if user is super admin (case-insensitive)
+  const userEmail = (user.email || "").toLowerCase();
+  const isAdmin = SUPER_ADMINS.some(admin => admin.toLowerCase() === userEmail);
 
   const { data: runs } = await supabase
     .from("test_runs")
@@ -26,7 +35,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Navbar userEmail={user.email} />
+      <Navbar userEmail={user.email} isAdmin={isAdmin} />
       <main className="flex-1 container py-8 max-w-5xl">
         <div className="flex items-center justify-between mb-8">
           <div>
