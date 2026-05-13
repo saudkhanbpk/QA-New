@@ -77,6 +77,9 @@ export function NewTestForm({ prefillUrl }: { prefillUrl?: string }) {
     
     try {
       const testRunIds: string[] = [];
+      // Generate batch ID for multiple URLs
+      const batchId = urlsToTest.length > 1 ? crypto.randomUUID() : null;
+      const batchName = urlsToTest.length > 1 ? `Batch Test - ${new Date().toLocaleString()}` : null;
       
       // ⚡ Submit all URLs in parallel (much faster than sequential)
       setStatusMsg(`Submitting ${urlsToTest.length} test${urlsToTest.length > 1 ? 's' : ''} in parallel...`);
@@ -86,7 +89,13 @@ export function NewTestForm({ prefillUrl }: { prefillUrl?: string }) {
           fetch("/api/test/run", {
             method: "POST", 
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url: testUrl, viewports, checks }),
+            body: JSON.stringify({ 
+              url: testUrl, 
+              viewports, 
+              checks,
+              batchId,
+              batchName
+            }),
           }).then(async res => {
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || `Failed to start test for ${testUrl}`);
@@ -154,7 +163,8 @@ export function NewTestForm({ prefillUrl }: { prefillUrl?: string }) {
               } else {
                 setStatusMsg(`All tests complete! ${completed} succeeded, ${failed} failed.`);
                 setTimeout(() => {
-                  window.location.href = `/dashboard`;
+                  // Redirect to batch view
+                  window.location.href = `/test/batch/${batchId}`;
                 }, 2000);
               }
             }

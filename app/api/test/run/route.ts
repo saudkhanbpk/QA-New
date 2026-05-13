@@ -15,6 +15,8 @@ interface RunPayload {
     security: boolean;
     others: boolean;
   };
+  batchId?: string | null;
+  batchName?: string | null;
 }
 
 export async function POST(request: NextRequest) {
@@ -36,7 +38,7 @@ export async function POST(request: NextRequest) {
   try { body = await request.json(); }
   catch { return NextResponse.json({ error: "Invalid request body" }, { status: 400 }); }
 
-  const { url, viewports, checks } = body;
+  const { url, viewports, checks, batchId, batchName } = body;
   if (!url || !viewports?.length)
     return NextResponse.json({ error: "URL and viewports are required" }, { status: 400 });
 
@@ -50,7 +52,13 @@ export async function POST(request: NextRequest) {
   const admin = createAdminClient();
   const { data: testRun, error: runError } = await admin
     .from("test_runs")
-    .insert({ user_id: user.id, page_url: url, status: "running" })
+    .insert({ 
+      user_id: user.id, 
+      page_url: url, 
+      status: "running",
+      batch_id: batchId || null,
+      batch_name: batchName || null
+    })
     .select().single();
 
   if (runError || !testRun)
