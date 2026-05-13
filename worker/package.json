@@ -1,0 +1,24 @@
+{
+  "name": "qa-worker",
+  "version": "1.0.0",
+  "description": "Standalone Fargate worker for QA testing",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts"
+  },
+  "dependencies": {
+    "@axe-core/playwright": "^4.9.1",
+    "@supabase/supabase-js": "^2.44.4",
+    "axe-core": "^4.9.1",
+    "lighthouse": "12.8.2",
+    "playwright": "1.45.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.0.0"
+  }
+}
