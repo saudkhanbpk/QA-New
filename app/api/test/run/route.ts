@@ -24,8 +24,8 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // ⚡ Rate limiting: 10 tests per user per hour
-  const rateLimitResult = checkRateLimit(`user:${user.id}`, { maxRequests: 10, windowMs: 60 * 60 * 1000 });
+  // ⚡ Rate limiting: increased for batch testing
+  const rateLimitResult = checkRateLimit(`user:${user.id}`, { maxRequests: 10000, windowMs: 60 * 60 * 1000 });
   if (!rateLimitResult.allowed) {
     const resetDate = new Date(rateLimitResult.resetAt);
     return NextResponse.json(
