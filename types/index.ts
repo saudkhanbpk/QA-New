@@ -24,6 +24,19 @@ export interface TestRun {
   overall_score: number | null;
   created_at: string;
   completed_at: string | null;
+  batch_id?: string | null;
+  batch_name?: string | null;
+}
+
+export interface TestBatch {
+  batch_id: string;
+  batch_name: string | null;
+  test_runs: TestRun[];
+  created_at: string;
+  total_tests: number;
+  completed_tests: number;
+  failed_tests: number;
+  average_score: number | null;
 }
 
 export interface TestResult {

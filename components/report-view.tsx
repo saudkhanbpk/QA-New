@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { CheckCircle2, XCircle, AlertTriangle, Download, Globe, Clock, Monitor, Smartphone, Tablet, Wrench } from "lucide-react";
+import { CheckCircle2, XCircle, AlertTriangle, Download, Globe, Clock, Monitor, Smartphone, Tablet, Wrench, RefreshCw } from "lucide-react";
 import type { TestReport, TestResult, Severity, ResultStatus } from "@/types";
 
 interface ReportViewProps { report: TestReport; }
@@ -277,6 +278,8 @@ export function ReportView({ report }: ReportViewProps) {
   ] as const;
 
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [rerunLoading, setRerunLoading] = useState(false);
+  const router = useRouter();
 
   async function handleDownloadPDF() {
     setPdfLoading(true);
@@ -284,6 +287,42 @@ export function ReportView({ report }: ReportViewProps) {
       await downloadPDF();
     } finally {
       setPdfLoading(false);
+    }
+  }
+
+  async function handleRerun() {
+    setRerunLoading(true);
+    try {
+      // Create a new test with the same URL and default settings
+      const response = await fetch("/api/test/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: run.page_url,
+          viewports: ["desktop", "mobile", "tablet"],
+          checks: {
+            performance: true,
+            broken_links: true,
+            compatibility: true,
+            security: true,
+            others: true,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to start rerun");
+      }
+
+      const { testRunId } = await response.json();
+      // Redirect to the new test report
+      router.push(`/test/${testRunId}`);
+    } catch (error) {
+      console.error("Rerun error:", error);
+      alert(error instanceof Error ? error.message : "Failed to rerun test");
+    } finally {
+      setRerunLoading(false);
     }
   }
 
@@ -308,10 +347,16 @@ export function ReportView({ report }: ReportViewProps) {
             )}
           </div>
         </div>
-        <Button variant="outline" size="sm" onClick={handleDownloadPDF} disabled={pdfLoading} className="gap-2 shrink-0">
-          <Download className="h-4 w-4" />
-          {pdfLoading ? "Generating PDF..." : "Download PDF"}
-        </Button>
+        <div className="flex gap-2 shrink-0">
+          <Button variant="outline" size="sm" onClick={handleRerun} disabled={rerunLoading} className="gap-2">
+            <RefreshCw className={`h-4 w-4 ${rerunLoading ? "animate-spin" : ""}`} />
+            {rerunLoading ? "Starting..." : "Rerun Test"}
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleDownloadPDF} disabled={pdfLoading} className="gap-2">
+            <Download className="h-4 w-4" />
+            {pdfLoading ? "Generating PDF..." : "Download PDF"}
+          </Button>
+        </div>
       </div>
 
       {/* Overall Score Card */}

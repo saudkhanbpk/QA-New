@@ -15,6 +15,8 @@ interface RunPayload {
     security: boolean;
     others: boolean;
   };
+  batchId?: string | null;
+  batchName?: string | null;
 }
 
 interface TestResultInsert {
@@ -53,7 +55,7 @@ export async function POST(request: NextRequest) {
   try { body = await request.json(); }
   catch { return NextResponse.json({ error: "Invalid request body" }, { status: 400 }); }
 
-  const { url, viewports, checks } = body;
+  const { url, viewports, checks, batchId, batchName } = body;
   if (!url || !viewports?.length)
     return NextResponse.json({ error: "URL and viewports are required" }, { status: 400 });
 
@@ -67,7 +69,13 @@ export async function POST(request: NextRequest) {
   const admin = createAdminClient();
   const { data: testRun, error: runError } = await admin
     .from("test_runs")
-    .insert({ user_id: user.id, page_url: url, status: "running" })
+    .insert({ 
+      user_id: user.id, 
+      page_url: url, 
+      status: "running",
+      batch_id: batchId || null,
+      batch_name: batchName || null
+    })
     .select().single();
 
   if (runError || !testRun)
@@ -165,6 +173,7 @@ async function runTests(testRunId: string, url: string, viewports: Viewport[], c
   if (checks.performance) {
     let lhBrowser;
     try {
+      // @ts-ignore - Playwright is installed, types are optional
       const { chromium } = await import("playwright");
       
       // ⚡ Use dynamic port to avoid conflicts when running multiple tests in parallel
@@ -311,6 +320,7 @@ async function runTests(testRunId: string, url: string, viewports: Viewport[], c
 
   // ── PER-VIEWPORT BROWSER CHECKS ─────────────────────────────────────────
   try {
+    // @ts-ignore - Playwright is installed, types are optional
     const { chromium } = await import("playwright");
     const browser = await chromium.launch({ headless: true });
 
@@ -322,8 +332,8 @@ async function runTests(testRunId: string, url: string, viewports: Viewport[], c
       });
       const page = await context.newPage();
       const consoleErrors: string[] = [];
-      page.on("console", msg => { if (msg.type() === "error") consoleErrors.push(msg.text().slice(0, 120)); });
-      page.on("pageerror", err => consoleErrors.push(err.message.slice(0, 120)));
+      page.on("console", (msg: any) => { if (msg.type() === "error") consoleErrors.push(msg.text().slice(0, 120)); });
+      page.on("pageerror", (err: Error) => consoleErrors.push(err.message.slice(0, 120)));
 
       try {
         const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 }); // ⚡ Increased from 30s to 60s for slow sites
@@ -437,7 +447,7 @@ async function runTests(testRunId: string, url: string, viewports: Viewport[], c
           const batchSize = 20; // ⚡ Increased from 15 to 20 for faster parallel checking
           for (let i = 0; i < linkData.length; i += batchSize) {
             const batch = linkData.slice(i, i + batchSize);
-            await Promise.all(batch.map(async (link) => {
+            await Promise.all(batch.map(async (link: { href: string; text: string }) => {
               try {
                 // Use AbortController for timeout
                 const controller = new AbortController();
@@ -704,6 +714,7 @@ async function runTests(testRunId: string, url: string, viewports: Viewport[], c
     // ── CROSS-BROWSER COMPATIBILITY TESTING ─────────────────────────────
     if (checks.compatibility) {
       console.log("Starting cross-browser compatibility testing...");
+      // @ts-ignore - Playwright is installed, types are optional
       const { chromium, firefox, webkit } = await import("playwright");
       const testViewport = { width: 1440, height: 900 };
       
@@ -727,8 +738,8 @@ async function runTests(testRunId: string, url: string, viewports: Viewport[], c
           const chromiumContext = await chromiumBrowser.newContext({ viewport: testViewport });
           const chromiumPage = await chromiumContext.newPage();
           const chromiumConsoleErrors: string[] = [];
-          chromiumPage.on("console", msg => { if (msg.type() === "error") chromiumConsoleErrors.push(msg.text()); });
-          chromiumPage.on("pageerror", err => chromiumConsoleErrors.push(err.message));
+          chromiumPage.on("console", (msg: any) => { if (msg.type() === "error") chromiumConsoleErrors.push(msg.text()); });
+          chromiumPage.on("pageerror", (err: Error) => chromiumConsoleErrors.push(err.message));
           
           const chromiumResponse = await chromiumPage.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 }); // ⚡ Increased to 60s for slow sites
           let chromiumScreenshot: Buffer | null = null;
@@ -748,8 +759,8 @@ async function runTests(testRunId: string, url: string, viewports: Viewport[], c
           const firefoxContext = await firefoxBrowser.newContext({ viewport: testViewport });
           const firefoxPage = await firefoxContext.newPage();
           const firefoxConsoleErrors: string[] = [];
-          firefoxPage.on("console", msg => { if (msg.type() === "error") firefoxConsoleErrors.push(msg.text()); });
-          firefoxPage.on("pageerror", err => firefoxConsoleErrors.push(err.message));
+          firefoxPage.on("console", (msg: any) => { if (msg.type() === "error") firefoxConsoleErrors.push(msg.text()); });
+          firefoxPage.on("pageerror", (err: Error) => firefoxConsoleErrors.push(err.message));
 
           const firefoxResponse = await firefoxPage.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 }); // ⚡ Increased to 60s for slow sites
           let firefoxScreenshot: Buffer | null = null;
@@ -769,8 +780,8 @@ async function runTests(testRunId: string, url: string, viewports: Viewport[], c
           const webkitContext = await webkitBrowser.newContext({ viewport: testViewport });
           const webkitPage = await webkitContext.newPage();
           const webkitConsoleErrors: string[] = [];
-          webkitPage.on("console", msg => { if (msg.type() === "error") webkitConsoleErrors.push(msg.text()); });
-          webkitPage.on("pageerror", err => webkitConsoleErrors.push(err.message));
+          webkitPage.on("console", (msg: any) => { if (msg.type() === "error") webkitConsoleErrors.push(msg.text()); });
+          webkitPage.on("pageerror", (err: Error) => webkitConsoleErrors.push(err.message));
 
           const webkitResponse = await webkitPage.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 }); // ⚡ Increased to 60s for slow sites
           let webkitScreenshot: Buffer | null = null;

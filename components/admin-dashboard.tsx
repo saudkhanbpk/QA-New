@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Users, TestTube, CheckCircle2, XCircle, Search, Calendar, Globe, Trash2, AlertTriangle, ChevronLeft, ChevronRight } from "lucide-react";
+import { Users, TestTube, CheckCircle2, XCircle, Search, Calendar, Globe, Trash2, AlertTriangle, ChevronLeft, ChevronRight, Layers } from "lucide-react";
 
 interface Profile {
   id: string;
@@ -26,6 +26,8 @@ interface TestRun {
   overall_score: number | null;
   created_at: string;
   completed_at: string | null;
+  batch_id?: string | null;
+  batch_name?: string | null;
   profiles?: { email: string };
 }
 
@@ -87,16 +89,42 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
     (t.profiles?.email || "").toLowerCase().includes(searchTest.toLowerCase())
   );
 
+  // Group tests by batch_id for display
+  const batchGroups = new Map<string, typeof filteredTests>();
+  const singleTests: typeof filteredTests = [];
+
+  filteredTests.forEach(test => {
+    if (test.batch_id) {
+      if (!batchGroups.has(test.batch_id)) {
+        batchGroups.set(test.batch_id, []);
+      }
+      batchGroups.get(test.batch_id)!.push(test);
+    } else {
+      singleTests.push(test);
+    }
+  });
+
+  // Convert to array for pagination
+  const batchArray = Array.from(batchGroups.entries()).map(([batchId, tests]) => ({
+    batch_id: batchId,
+    batch_name: tests[0].batch_name || "Batch Test",
+    tests,
+    created_at: tests[0].created_at,
+  }));
+
+  // Combine batches and single tests for pagination
+  const allItems = [...batchArray, ...singleTests.map(t => ({ single: true, test: t }))];
+  
   // Pagination calculations
   const totalUserPages = Math.ceil(filteredProfiles.length / usersPerPage);
-  const totalTestPages = Math.ceil(filteredTests.length / testsPerPage);
+  const totalTestPages = Math.ceil(allItems.length / testsPerPage);
   
   const paginatedUsers = filteredProfiles.slice(
     (userPage - 1) * usersPerPage,
     userPage * usersPerPage
   );
   
-  const paginatedTests = filteredTests.slice(
+  const paginatedItems = allItems.slice(
     (testPage - 1) * testsPerPage,
     testPage * testsPerPage
   );
@@ -383,49 +411,101 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
-                {paginatedTests.length === 0 ? (
+                {paginatedItems.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-8">No tests found</p>
                 ) : (
-                  paginatedTests.map((test) => (
-                    <div
-                      key={test.id}
-                      className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
-                    >
-                      <div className="space-y-1 flex-1">
-                        <div className="flex items-center gap-2">
-                          <Globe className="h-4 w-4 text-muted-foreground" />
-                          <p className="font-medium text-sm truncate max-w-md">{test.page_url}</p>
-                          <Badge
-                            variant={
-                              test.status === "completed" ? "default" :
-                              test.status === "failed" ? "destructive" :
-                              test.status === "running" ? "secondary" : "outline"
-                            }
+                  paginatedItems.map((item, index) => {
+                    // Check if it's a batch or single test
+                    if ('single' in item && item.single) {
+                      const test = item.test;
+                      return (
+                        <div
+                          key={test.id}
+                          className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
+                        >
+                          <div className="space-y-1 flex-1">
+                            <div className="flex items-center gap-2">
+                              <Globe className="h-4 w-4 text-muted-foreground" />
+                              <p className="font-medium text-sm truncate max-w-md">{test.page_url}</p>
+                              <Badge
+                                variant={
+                                  test.status === "completed" ? "default" :
+                                  test.status === "failed" ? "destructive" :
+                                  test.status === "running" ? "secondary" : "outline"
+                                }
+                              >
+                                {test.status}
+                              </Badge>
+                              {test.overall_score !== null && (
+                                <Badge variant="outline" className={
+                                  test.overall_score >= 90 ? "text-green-600" :
+                                  test.overall_score >= 70 ? "text-yellow-600" : "text-red-600"
+                                }>
+                                  Score: {test.overall_score}/100
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                              <span>User: {test.profiles?.email || "Unknown"}</span>
+                              <span>{new Date(test.created_at).toLocaleString()}</span>
+                            </div>
+                          </div>
+                          <Link
+                            href={`/test/${test.id}`}
+                            className="text-sm text-primary hover:underline whitespace-nowrap"
                           >
-                            {test.status}
-                          </Badge>
-                          {test.overall_score !== null && (
-                            <Badge variant="outline" className={
-                              test.overall_score >= 90 ? "text-green-600" :
-                              test.overall_score >= 70 ? "text-yellow-600" : "text-red-600"
-                            }>
-                              Score: {test.overall_score}/100
-                            </Badge>
-                          )}
+                            View Report →
+                          </Link>
                         </div>
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                          <span>User: {test.profiles?.email || "Unknown"}</span>
-                          <span>{new Date(test.created_at).toLocaleString()}</span>
+                      );
+                    } else {
+                      // It's a batch
+                      const batch = item as { batch_id: string; batch_name: string; tests: any[]; created_at: string };
+                      const completedTests = batch.tests.filter(t => t.status === "completed").length;
+                      const failedTests = batch.tests.filter(t => t.status === "failed").length;
+                      const completedScores = batch.tests
+                        .filter(t => t.status === "completed" && t.overall_score !== null)
+                        .map(t => t.overall_score as number);
+                      const averageScore = completedScores.length > 0
+                        ? Math.round(completedScores.reduce((a, b) => a + b, 0) / completedScores.length)
+                        : null;
+
+                      return (
+                        <div
+                          key={batch.batch_id}
+                          className="p-4 border-2 border-primary/20 rounded-lg hover:bg-muted/50 transition-colors"
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2 flex-1">
+                              <Layers className="h-4 w-4 text-primary" />
+                              <p className="font-semibold text-sm">{batch.batch_name}</p>
+                              <Badge variant="outline">{batch.tests.length} URLs</Badge>
+                              {averageScore !== null && (
+                                <Badge variant="outline" className={
+                                  averageScore >= 90 ? "text-green-600" :
+                                  averageScore >= 70 ? "text-yellow-600" : "text-red-600"
+                                }>
+                                  Avg: {averageScore}/100
+                                </Badge>
+                              )}
+                            </div>
+                            <Link
+                              href={`/test/batch/${batch.batch_id}`}
+                              className="text-sm text-primary hover:underline whitespace-nowrap"
+                            >
+                              View Batch →
+                            </Link>
+                          </div>
+                          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                            <span>User: {batch.tests[0].profiles?.email || "Unknown"}</span>
+                            <span>{new Date(batch.created_at).toLocaleString()}</span>
+                            <span className="text-green-600">{completedTests} completed</span>
+                            {failedTests > 0 && <span className="text-red-600">{failedTests} failed</span>}
+                          </div>
                         </div>
-                      </div>
-                      <Link
-                        href={`/test/${test.id}`}
-                        className="text-sm text-primary hover:underline whitespace-nowrap"
-                      >
-                        View Report →
-                      </Link>
-                    </div>
-                  ))
+                      );
+                    }
+                  })
                 )}
               </div>
               
@@ -433,7 +513,7 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
               {totalTestPages > 1 && (
                 <div className="flex items-center justify-between mt-4 pt-4 border-t">
                   <p className="text-sm text-muted-foreground">
-                    Showing {((testPage - 1) * testsPerPage) + 1} to {Math.min(testPage * testsPerPage, filteredTests.length)} of {filteredTests.length} tests
+                    Showing {((testPage - 1) * testsPerPage) + 1} to {Math.min(testPage * testsPerPage, allItems.length)} of {allItems.length} items
                   </p>
                   <div className="flex items-center gap-2">
                     <Button
