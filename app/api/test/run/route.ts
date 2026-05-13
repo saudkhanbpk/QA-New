@@ -61,8 +61,10 @@ export async function POST(request: NextRequest) {
     })
     .select().single();
 
-  if (runError || !testRun)
-    return NextResponse.json({ error: "Failed to create test run" }, { status: 500 });
+  if (runError || !testRun) {
+    console.error("Supabase insert error:", runError);
+    return NextResponse.json({ error: `Failed to create test run: ${runError?.message || 'Unknown DB error'}` }, { status: 500 });
+  }
 
   // ⚡ Offload to AWS Fargate
   try {
