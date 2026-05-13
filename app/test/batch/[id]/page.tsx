@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { Navbar } from "@/components/navbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,15 +23,29 @@ export default async function BatchViewPage({ params }: PageProps) {
 
   if (!user) redirect("/login");
 
+  // List of super admin email addresses
+  const SUPER_ADMINS = ["admin@autoqa.com"];
+  const userEmail = (user.email || "").toLowerCase();
+  const isAdmin = SUPER_ADMINS.some(admin => admin.toLowerCase() === userEmail);
+
   const batchId = params.id;
 
-  // Fetch all test runs in this batch
-  const { data: testRuns } = await supabase
+  // Use admin client for admins to bypass RLS, regular client for users
+  const dbClient = isAdmin ? createAdminClient() : supabase;
+
+  // Fetch all test runs in this batch - admins can view any batch, regular users only their own
+  const query = dbClient
     .from("test_runs")
     .select("*")
     .eq("batch_id", batchId)
-    .eq("user_id", user.id)
     .order("created_at", { ascending: true });
+
+  // If not admin, restrict to user's own tests
+  if (!isAdmin) {
+    query.eq("user_id", user.id);
+  }
+
+  const { data: testRuns } = await query;
 
   if (!testRuns || testRuns.length === 0) {
     redirect("/dashboard");
