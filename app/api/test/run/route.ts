@@ -52,9 +52,9 @@ export async function POST(request: NextRequest) {
   const admin = createAdminClient();
   const { data: testRun, error: runError } = await admin
     .from("test_runs")
-    .insert({ 
-      user_id: user.id, 
-      page_url: url, 
+    .insert({
+      user_id: user.id,
+      page_url: url,
       status: "running",
       batch_id: batchId || null,
       batch_name: batchName || null
@@ -69,11 +69,11 @@ export async function POST(request: NextRequest) {
   // ⚡ Offload to AWS Fargate
   try {
     console.log(`Triggering ECS Fargate task for test run ${testRun.id}...`);
-    
+
     // Fallback to eu-central-1 if not specified
     const region = process.env.AWS_REGION || "eu-central-1";
-    
-    const ecsClient = new ECSClient({ 
+
+    const ecsClient = new ECSClient({
       region,
       credentials: {
         accessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
@@ -109,15 +109,15 @@ export async function POST(request: NextRequest) {
         ],
       },
     }));
-    
+
     console.log(`Successfully triggered ECS task for ${testRun.id}`);
   } catch (awsError) {
     console.error("Failed to trigger AWS ECS Task:", awsError);
     await admin.from("test_runs")
       .update({ status: "failed", completed_at: new Date().toISOString() })
       .eq("id", testRun.id);
-      
-    return NextResponse.json({ error: "Failed to start background worker" }, { status: 500 });
+
+    return NextResponse.json({ error: "Failed to start background worker", awsError }, { status: 500 });
   }
 
   return NextResponse.json({ testRunId: testRun.id });
