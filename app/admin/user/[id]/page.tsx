@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Calendar, Globe, Mail, TestTube, CheckCircle2, XCircle, Clock } from "lucide-react";
+import { UserTestHistory } from "@/components/user-test-history";
 
 export const dynamic = "force-dynamic";
 
@@ -74,14 +75,14 @@ export default async function UserDetailPage({ params }: PageProps) {
 
         {/* User Info Header */}
         <div className="mb-6">
-          <h1 className="text-3xl font-bold mb-2">User Details</h1>
-          <div className="flex items-center gap-4 text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <Mail className="h-4 w-4" />
+          <h1 className="text-2xl sm:text-3xl font-bold mb-2">User Details</h1>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-muted-foreground">
+            <span className="flex items-center gap-1 break-all">
+              <Mail className="h-4 w-4 shrink-0" />
               {profile.email}
             </span>
-            <span className="flex items-center gap-1">
-              <Calendar className="h-4 w-4" />
+            <span className="flex items-center gap-1 whitespace-nowrap">
+              <Calendar className="h-4 w-4 shrink-0" />
               Joined {new Date(profile.created_at).toLocaleDateString()}
             </span>
           </div>
@@ -131,66 +132,7 @@ export default async function UserDetailPage({ params }: PageProps) {
         </div>
 
         {/* Test Runs List */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Test History</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {runs.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">No tests found for this user</p>
-            ) : (
-              <div className="space-y-2">
-                {runs.map((test) => (
-                  <div
-                    key={test.id}
-                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
-                  >
-                    <div className="space-y-1 flex-1">
-                      <div className="flex items-center gap-2">
-                        <Globe className="h-4 w-4 text-muted-foreground" />
-                        <p className="font-medium text-sm truncate max-w-md">{test.page_url}</p>
-                        <Badge
-                          variant={
-                            test.status === "completed" ? "default" :
-                            test.status === "failed" ? "destructive" :
-                            test.status === "running" ? "secondary" : "outline"
-                          }
-                        >
-                          {test.status}
-                        </Badge>
-                        {test.overall_score !== null && (
-                          <Badge variant="outline" className={
-                            test.overall_score >= 90 ? "text-green-600" :
-                            test.overall_score >= 70 ? "text-yellow-600" : "text-red-600"
-                          }>
-                            Score: {test.overall_score}/100
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
-                          {new Date(test.created_at).toLocaleString()}
-                        </span>
-                        {test.completed_at && (
-                          <span>
-                            Completed: {new Date(test.completed_at).toLocaleString()}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <Link
-                      href={`/test/${test.id}`}
-                      className="text-sm text-primary hover:underline whitespace-nowrap"
-                    >
-                      View Report →
-                    </Link>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <UserTestHistory runs={runs} />
       </main>
     </div>
   );
