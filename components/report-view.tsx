@@ -515,15 +515,15 @@ function ResultCard({ result }: { result: TestResult }) {
   return (
     <Card className={`border-l-4 ${result.status === "pass" ? "border-l-green-500" : result.status === "fail" ? "border-l-red-500" : "border-l-yellow-500"}`}>
       <CardContent className="py-4">
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
           <div className="flex items-start gap-3 min-w-0">
             <StatusIcon status={result.status} />
             <div className="min-w-0">
-              <p className="text-sm font-medium">{result.check_name}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">{result.message}</p>
+              <p className="text-sm font-medium break-words">{result.check_name}</p>
+              <p className="text-xs text-muted-foreground mt-0.5 break-words">{result.message}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 mt-2 sm:mt-0 pl-7 sm:pl-0">
             <SeverityBadge severity={result.severity} />
             {hasFix && (
               <Button variant="ghost" size="sm" onClick={() => setOpen(!open)} className="gap-1 text-xs h-7">
@@ -532,7 +532,7 @@ function ResultCard({ result }: { result: TestResult }) {
             )}
           </div>
         </div>
-        {open && hasFix && <div className="mt-3"><FixCard recommendation={result.fix_recommendation!} /></div>}
+        {open && hasFix && <div className="mt-3 pl-7 sm:pl-0"><FixCard recommendation={result.fix_recommendation!} /></div>}
       </CardContent>
     </Card>
   );

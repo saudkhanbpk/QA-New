@@ -49,7 +49,7 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
   const [banModalOpen, setBanModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<{ id: string; email: string; banned: boolean } | null>(null);
-  
+
   // Pagination states
   const [userPage, setUserPage] = useState(1);
   const [testPage, setTestPage] = useState(1);
@@ -114,16 +114,16 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
 
   // Combine batches and single tests for pagination
   const allItems = [...batchArray, ...singleTests.map(t => ({ single: true, test: t }))];
-  
+
   // Pagination calculations
   const totalUserPages = Math.ceil(filteredProfiles.length / usersPerPage);
   const totalTestPages = Math.ceil(allItems.length / testsPerPage);
-  
+
   const paginatedUsers = filteredProfiles.slice(
     (userPage - 1) * usersPerPage,
     userPage * usersPerPage
   );
-  
+
   const paginatedItems = allItems.slice(
     (testPage - 1) * testsPerPage,
     testPage * testsPerPage
@@ -296,7 +296,7 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
                     const completedCount = userTests.filter(t => t.status === "completed").length;
                     const isBanned = profile.banned || false;
                     const isLoading = loading === profile.id;
-                    
+
                     return (
                       <div
                         key={profile.id}
@@ -357,11 +357,11 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
                   })
                 )}
               </div>
-              
+
               {/* User Pagination */}
               {totalUserPages > 1 && (
-                <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                  <p className="text-sm text-muted-foreground">
+                <div className="flex flex-col sm:flex-row items-center justify-between mt-4 pt-4 border-t gap-4">
+                  <p className="text-sm text-muted-foreground text-center sm:text-left">
                     Showing {((userPage - 1) * usersPerPage) + 1} to {Math.min(userPage * usersPerPage, filteredProfiles.length)} of {filteredProfiles.length} users
                   </p>
                   <div className="flex items-center gap-2">
@@ -430,8 +430,8 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
                               <Badge
                                 variant={
                                   test.status === "completed" ? "default" :
-                                  test.status === "failed" ? "destructive" :
-                                  test.status === "running" ? "secondary" : "outline"
+                                    test.status === "failed" ? "destructive" :
+                                      test.status === "running" ? "secondary" : "outline"
                                 }
                               >
                                 {test.status}
@@ -439,7 +439,7 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
                               {test.overall_score !== null && (
                                 <Badge variant="outline" className={
                                   test.overall_score >= 90 ? "text-green-600" :
-                                  test.overall_score >= 70 ? "text-yellow-600" : "text-red-600"
+                                    test.overall_score >= 70 ? "text-yellow-600" : "text-red-600"
                                 }>
                                   Score: {test.overall_score}/100
                                 </Badge>
@@ -483,7 +483,7 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
                               {averageScore !== null && (
                                 <Badge variant="outline" className={
                                   averageScore >= 90 ? "text-green-600" :
-                                  averageScore >= 70 ? "text-yellow-600" : "text-red-600"
+                                    averageScore >= 70 ? "text-yellow-600" : "text-red-600"
                                 }>
                                   Avg: {averageScore}/100
                                 </Badge>
@@ -508,11 +508,11 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
                   })
                 )}
               </div>
-              
+
               {/* Test Pagination */}
               {totalTestPages > 1 && (
-                <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                  <p className="text-sm text-muted-foreground">
+                <div className="flex flex-col sm:flex-row items-center justify-between mt-4 pt-4 border-t gap-4">
+                  <p className="text-sm text-muted-foreground text-center sm:text-left">
                     Showing {((testPage - 1) * testsPerPage) + 1} to {Math.min(testPage * testsPerPage, allItems.length)} of {allItems.length} items
                   </p>
                   <div className="flex items-center gap-2">
