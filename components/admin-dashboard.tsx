@@ -220,7 +220,7 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{liveStats.totalUsers}</div>
+            <div className="text-xl sm:text-2xl font-bold">{liveStats.totalUsers}</div>
             <p className="text-xs text-muted-foreground">Registered accounts</p>
           </CardContent>
         </Card>
@@ -231,7 +231,7 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
             <TestTube className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{liveStats.totalTests}</div>
+            <div className="text-xl sm:text-2xl font-bold">{liveStats.totalTests}</div>
             <p className="text-xs text-muted-foreground">All test runs</p>
           </CardContent>
         </Card>
@@ -242,7 +242,7 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
             <CheckCircle2 className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{liveStats.completedTests}</div>
+            <div className="text-xl sm:text-2xl font-bold text-green-600">{liveStats.completedTests}</div>
             <p className="text-xs text-muted-foreground">
               {liveStats.totalTests > 0 ? Math.round((liveStats.completedTests / liveStats.totalTests) * 100) : 0}% success rate
             </p>
@@ -255,7 +255,7 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
             <XCircle className="h-4 w-4 text-red-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">{liveStats.failedTests}</div>
+            <div className="text-xl sm:text-2xl font-bold text-red-600">{liveStats.failedTests}</div>
             <p className="text-xs text-muted-foreground">
               {liveStats.totalTests > 0 ? Math.round((liveStats.failedTests / liveStats.totalTests) * 100) : 0}% failure rate
             </p>

@@ -80,7 +80,7 @@ export default async function BatchViewPage({ params }: PageProps) {
 
         {/* Batch Header */}
         <div className="mb-6">
-          <h1 className="text-3xl font-bold mb-2">{batchName}</h1>
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold mb-2">{batchName}</h1>
           <p className="text-muted-foreground">
             Tested on {new Date(runs[0].created_at).toLocaleString()}
           </p>
@@ -94,7 +94,7 @@ export default async function BatchViewPage({ params }: PageProps) {
               <Globe className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{totalTests}</div>
+              <div className="text-lg sm:text-xl md:text-2xl font-bold">{totalTests}</div>
             </CardContent>
           </Card>
 
@@ -104,7 +104,7 @@ export default async function BatchViewPage({ params }: PageProps) {
               <CheckCircle2 className="h-4 w-4 text-green-600" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">{completedTests}</div>
+              <div className="text-lg sm:text-xl md:text-2xl font-bold text-green-600">{completedTests}</div>
             </CardContent>
           </Card>
 
@@ -114,7 +114,7 @@ export default async function BatchViewPage({ params }: PageProps) {
               <XCircle className="h-4 w-4 text-red-600" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-red-600">{failedTests}</div>
+              <div className="text-lg sm:text-xl md:text-2xl font-bold text-red-600">{failedTests}</div>
             </CardContent>
           </Card>
 
@@ -125,13 +125,13 @@ export default async function BatchViewPage({ params }: PageProps) {
             </CardHeader>
             <CardContent>
               {averageScore !== null ? (
-                <div className={`text-2xl font-bold ${averageScore >= 90 ? "text-green-600" :
+                <div className={`text-lg sm:text-xl md:text-2xl font-bold ${averageScore >= 90 ? "text-green-600" :
                   averageScore >= 70 ? "text-yellow-600" : "text-red-600"
                   }`}>
                   {averageScore}
                 </div>
               ) : (
-                <div className="text-2xl font-bold text-muted-foreground">-</div>
+                <div className="text-lg sm:text-xl md:text-2xl font-bold text-muted-foreground">-</div>
               )}
             </CardContent>
           </Card>

@@ -91,8 +91,11 @@ export function NewTestForm({ prefillUrl }: { prefillUrl?: string }) {
       setStatusMsg(`Submitting ${urlsToTest.length} test${urlsToTest.length > 1 ? 's' : ''} in parallel...`);
 
       const submissions = await Promise.allSettled(
-        urlsToTest.map(testUrl =>
-          fetch("/api/test/run", {
+        urlsToTest.map(async (testUrl, index) => {
+          // ⚡ Stagger submissions by 150ms to avoid hammering the API/ECS
+          if (index > 0) await new Promise(r => setTimeout(r, index * 150));
+          
+          return fetch("/api/test/run", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -106,8 +109,8 @@ export function NewTestForm({ prefillUrl }: { prefillUrl?: string }) {
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || `Failed to start test for ${testUrl}`);
             return { testRunId: data.testRunId, url: testUrl };
-          })
-        )
+          });
+        })
       );
 
       // Collect successful submissions
@@ -236,7 +239,7 @@ export function NewTestForm({ prefillUrl }: { prefillUrl?: string }) {
               onChange={(e) => setUrl(e.target.value)}
               required
               disabled={loading}
-              className="text-base"
+              className="text-sm sm:text-base"
             />
           )}
         </CardContent>
@@ -249,8 +252,8 @@ export function NewTestForm({ prefillUrl }: { prefillUrl?: string }) {
             <button key={id} type="button" onClick={() => toggleViewport(id)} disabled={loading}
               className={`flex flex-col items-center px-5 py-3 rounded-lg border-2 transition-colors text-sm font-medium ${viewports.includes(id) ? "border-primary bg-primary/5 text-primary" : "border-border text-muted-foreground hover:border-primary/50"
                 }`}>
-              <span>{label}</span>
-              <span className="text-xs font-normal opacity-70">{desc}</span>
+              <span className="text-[13px] sm:text-sm">{label}</span>
+              <span className="text-[10px] sm:text-xs font-normal opacity-70">{desc}</span>
             </button>
           ))}
         </CardContent>
@@ -265,8 +268,8 @@ export function NewTestForm({ prefillUrl }: { prefillUrl?: string }) {
               <input type="checkbox" checked={checks[id]} onChange={() => toggleCheck(id)}
                 disabled={loading} className="mt-0.5 accent-primary" />
               <div>
-                <p className="text-sm font-medium">{label}</p>
-                <p className="text-xs text-muted-foreground">{desc}</p>
+                <p className="text-[13px] sm:text-sm font-medium">{label}</p>
+                <p className="text-[11px] sm:text-xs text-muted-foreground">{desc}</p>
               </div>
             </label>
           ))}

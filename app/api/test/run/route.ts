@@ -112,7 +112,19 @@ export async function POST(request: NextRequest) {
 
     console.log(`Successfully triggered ECS task for ${testRun.id}`);
   } catch (awsError) {
-    console.error("Failed to trigger AWS ECS Task:", awsError);
+    // ⚡ SAFETY CHECK: Before marking as failed, verify if it was already marked as completed/running by the worker
+    // This prevents race conditions where the ECS trigger returns an error but the test actually started.
+    const { data: currentTest } = await admin
+      .from("test_runs")
+      .select("status")
+      .eq("id", testRun.id)
+      .single();
+      
+    if (currentTest?.status === 'running' || currentTest?.status === 'completed') {
+      console.log(`Test ${testRun.id} is already ${currentTest.status}, skipping failure update.`);
+      return NextResponse.json({ testRunId: testRun.id, status: currentTest.status });
+    }
+
     await admin.from("test_runs")
       .update({ status: "failed", completed_at: new Date().toISOString() })
       .eq("id", testRun.id);

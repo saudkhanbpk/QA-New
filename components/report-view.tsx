@@ -367,7 +367,7 @@ export function ReportView({ report }: ReportViewProps) {
               <div className="text-center md:text-left">
                 <p className="text-sm text-muted-foreground mb-1">Overall Quality Score</p>
                 <div className="flex items-baseline gap-2">
-                  <span className={`text-5xl font-bold ${
+                  <span className={`text-3xl sm:text-4xl md:text-5xl font-bold ${
                     run.overall_score >= 90 ? "text-green-600" :
                     run.overall_score >= 70 ? "text-yellow-600" :
                     run.overall_score >= 50 ? "text-orange-600" :
@@ -375,7 +375,7 @@ export function ReportView({ report }: ReportViewProps) {
                   }`}>
                     {run.overall_score}
                   </span>
-                  <span className="text-2xl text-muted-foreground">/100</span>
+                  <span className="text-xl sm:text-2xl text-muted-foreground">/100</span>
                 </div>
                 <p className="text-xs text-muted-foreground mt-2">
                   {run.overall_score >= 90 ? "Excellent - Production ready" :
@@ -437,7 +437,7 @@ export function ReportView({ report }: ReportViewProps) {
               <Card key={key} className="text-center">
                 <CardContent className="pt-3 pb-2 px-2">
                   <p className="text-xs text-muted-foreground mb-1">{label}</p>
-                  <p className="text-xl font-bold">
+                  <p className="text-lg sm:text-xl font-bold">
                     {fails > 0 ? <span className="text-red-500">{fails}</span>
                       : warns > 0 ? <span className="text-yellow-500">{warns}</span>
                       : <span className="text-green-500">{items.length}</span>}
@@ -519,8 +519,8 @@ function ResultCard({ result }: { result: TestResult }) {
           <div className="flex items-start gap-3 min-w-0">
             <StatusIcon status={result.status} />
             <div className="min-w-0">
-              <p className="text-sm font-medium break-words">{result.check_name}</p>
-              <p className="text-xs text-muted-foreground mt-0.5 break-words">{result.message}</p>
+              <p className="text-[13px] sm:text-sm font-medium break-words">{result.check_name}</p>
+              <p className="text-[11px] sm:text-xs text-muted-foreground mt-0.5 break-words">{result.message}</p>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0 mt-2 sm:mt-0 pl-7 sm:pl-0">

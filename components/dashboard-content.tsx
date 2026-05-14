@@ -120,7 +120,7 @@ export function DashboardContent({ testRuns }: DashboardContentProps) {
             <TestTube className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalTests}</div>
+            <div className="text-xl sm:text-2xl font-bold">{totalTests}</div>
             <p className="text-xs text-muted-foreground">All time</p>
           </CardContent>
         </Card>
@@ -131,7 +131,7 @@ export function DashboardContent({ testRuns }: DashboardContentProps) {
             <CheckCircle2 className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{completedTests}</div>
+            <div className="text-xl sm:text-2xl font-bold text-green-600">{completedTests}</div>
             <p className="text-xs text-muted-foreground">
               {totalTests > 0 ? Math.round((completedTests / totalTests) * 100) : 0}% success rate
             </p>
@@ -144,7 +144,7 @@ export function DashboardContent({ testRuns }: DashboardContentProps) {
             <XCircle className="h-4 w-4 text-red-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">{failedTests}</div>
+            <div className="text-xl sm:text-2xl font-bold text-red-600">{failedTests}</div>
             <p className="text-xs text-muted-foreground">
               {totalTests > 0 ? Math.round((failedTests / totalTests) * 100) : 0}% failure rate
             </p>
@@ -157,7 +157,7 @@ export function DashboardContent({ testRuns }: DashboardContentProps) {
             <Loader2 className="h-4 w-4 text-yellow-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-yellow-600">{runningTests}</div>
+            <div className="text-xl sm:text-2xl font-bold text-yellow-600">{runningTests}</div>
             <p className="text-xs text-muted-foreground">In progress</p>
           </CardContent>
         </Card>
@@ -168,7 +168,7 @@ export function DashboardContent({ testRuns }: DashboardContentProps) {
             <Calendar className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{todayTests}</div>
+            <div className="text-xl sm:text-2xl font-bold text-blue-600">{todayTests}</div>
             <p className="text-xs text-muted-foreground">Tests run today</p>
           </CardContent>
         </Card>

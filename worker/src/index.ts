@@ -1036,7 +1036,18 @@ async function runTests(testRunId: string, url: string, viewports: Viewport[], c
     overallScore = Math.max(0, Math.min(100, overallScore));
   }
 
-  await admin.from("test_runs")
-    .update({ status: "completed", overall_score: overallScore, completed_at: new Date().toISOString() })
+  console.log(`Finalizing test run ${testRunId} with score ${overallScore}...`);
+  const { error: finalUpdateError } = await admin.from("test_runs")
+    .update({ 
+      status: "completed", 
+      overall_score: overallScore, 
+      completed_at: new Date().toISOString() 
+    })
     .eq("id", testRunId);
+
+  if (finalUpdateError) {
+    console.error("Failed to update final status in Supabase:", finalUpdateError.message);
+  } else {
+    console.log(`Test run ${testRunId} marked as completed.`);
+  }
 }

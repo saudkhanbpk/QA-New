@@ -30,10 +30,10 @@ export default async function HomePage() {
       {/* Hero */}
       <section className="flex-1 flex flex-col items-center justify-center px-4 py-20 text-center">
         <Badge variant="secondary" className="mb-4">Automated QA Testing</Badge>
-        <h1 className="text-4xl md:text-6xl font-bold tracking-tight mb-4">
+        <h1 className="text-3xl sm:text-4xl md:text-6xl font-bold tracking-tight mb-4">
           Test any webpage in <span className="text-primary">seconds</span>
         </h1>
-        <p className="text-muted-foreground text-lg max-w-xl mb-8">
+        <p className="text-muted-foreground text-base sm:text-lg max-w-xl mb-8">
           Run automated responsive, functional, and accessibility checks on any URL.
           Get detailed reports with fix recommendations instantly.
         </p>
