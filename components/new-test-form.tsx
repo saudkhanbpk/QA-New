@@ -79,7 +79,7 @@ export function NewTestForm({ prefillUrl }: { prefillUrl?: string }) {
       const testRunIds: string[] = [];
       const generateId = () => {
         if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
-        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
           const r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
           return v.toString(16);
         });
@@ -277,7 +277,7 @@ export function NewTestForm({ prefillUrl }: { prefillUrl?: string }) {
       {loading && (
         <div className="space-y-2">
           <Progress value={progress} className="h-2" />
-          <p className="text-sm text-muted-foreground text-center">{statusMsg}</p>
+          {/* <p className="text-sm text-muted-foreground text-center">{statusMsg}</p> */}
         </div>
       )}
       <Button type="submit" className="w-full gap-2 h-11" disabled={loading}>
