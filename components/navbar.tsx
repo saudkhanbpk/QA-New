@@ -15,6 +15,9 @@ export function Navbar({ userEmail, isAdmin }: NavbarProps) {
   const router = useRouter();
   const supabase = createClient();
 
+  // Debug: Log the email and admin status
+  console.log("Navbar - Email:", userEmail, "IsAdmin:", isAdmin);
+
   async function handleSignOut() {
     await supabase.auth.signOut();
     router.push("/");
@@ -23,38 +26,39 @@ export function Navbar({ userEmail, isAdmin }: NavbarProps) {
 
   return (
     <nav className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-14 items-center justify-between">
-        <Link href="/" className="flex items-center gap-2 font-semibold">
+      <div className="container flex h-14 items-center justify-between px-4">
+        <Link href="/" className="flex items-center gap-2 font-semibold shrink-0">
           <Bug className="h-5 w-5 text-primary" />
-          <span>QA Tester</span>
+          <span className="hidden sm:inline">QA Tester</span>
+          <span className="sm:hidden">QA</span>
         </Link>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto">
           {userEmail ? (
             <>
               <Link href="/dashboard">
-                <Button variant="ghost" size="sm" className="gap-1">
+                <Button variant="ghost" size="sm" className="gap-1 shrink-0">
                   <LayoutDashboard className="h-4 w-4" />
-                  Dashboard
+                  <span className="hidden md:inline">Dashboard</span>
                 </Button>
               </Link>
               {isAdmin && (
                 <Link href="/admin">
-                  <Button variant="ghost" size="sm" className="gap-1">
+                  <Button variant="ghost" size="sm" className="gap-1 shrink-0">
                     <Shield className="h-4 w-4" />
-                    Admin
+                    <span className="hidden md:inline">Admin</span>
                   </Button>
                 </Link>
               )}
               <Link href="/test/new">
-                <Button size="sm" className="gap-1">
+                <Button size="sm" className="gap-1 shrink-0">
                   <Plus className="h-4 w-4" />
-                  New Test
+                  <span className="hidden sm:inline">New Test</span>
                 </Button>
               </Link>
-              <Button variant="ghost" size="sm" onClick={handleSignOut} className="gap-1">
+              <Button variant="ghost" size="sm" onClick={handleSignOut} className="gap-1 shrink-0">
                 <LogOut className="h-4 w-4" />
-                Sign out
+                <span className="hidden sm:inline">Sign out</span>
               </Button>
             </>
           ) : (

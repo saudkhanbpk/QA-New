@@ -300,21 +300,21 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
                     return (
                       <div
                         key={profile.id}
-                        className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
+                        className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors gap-3"
                       >
-                        <div className="space-y-1 flex-1">
-                          <div className="flex items-center gap-2">
-                            <p className="font-medium">{profile.email}</p>
-                            <Badge variant="outline" className="text-xs">
+                        <div className="space-y-1 flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-medium break-all">{profile.email}</p>
+                            <Badge variant="outline" className="text-xs shrink-0">
                               {userTests.length} test{userTests.length !== 1 ? 's' : ''}
                             </Badge>
                             {isBanned && (
-                              <Badge variant="destructive" className="text-xs">
+                              <Badge variant="destructive" className="text-xs shrink-0">
                                 Banned
                               </Badge>
                             )}
                           </div>
-                          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-xs text-muted-foreground">
                             <span className="flex items-center gap-1">
                               <Calendar className="h-3 w-3" />
                               Joined {new Date(profile.created_at).toLocaleDateString()}
@@ -324,8 +324,8 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
                             </span>
                           </div>
                         </div>
-                        <div className="flex items-center gap-4">
-                          <div className="flex items-center gap-2">
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4">
+                          <div className="flex items-center justify-between sm:justify-start gap-2">
                             <span className="text-sm text-muted-foreground">
                               {isBanned ? "Banned" : "Active"}
                             </span>
@@ -337,7 +337,7 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
                           </div>
                           <Link
                             href={`/admin/user/${profile.id}`}
-                            className="text-sm text-primary hover:underline"
+                            className="text-sm text-primary hover:underline text-center sm:text-left"
                           >
                             View Details →
                           </Link>
@@ -346,7 +346,7 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
                             size="sm"
                             onClick={() => openDeleteModal(profile.id, profile.email)}
                             disabled={isLoading}
-                            className="gap-1"
+                            className="gap-1 w-full sm:w-auto"
                           >
                             <Trash2 className="h-3 w-3" />
                             Delete
@@ -360,8 +360,8 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
               
               {/* User Pagination */}
               {totalUserPages > 1 && (
-                <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                  <p className="text-sm text-muted-foreground">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t">
+                  <p className="text-sm text-muted-foreground text-center sm:text-left">
                     Showing {((userPage - 1) * usersPerPage) + 1} to {Math.min(userPage * usersPerPage, filteredProfiles.length)} of {filteredProfiles.length} users
                   </p>
                   <div className="flex items-center gap-2">
@@ -372,9 +372,9 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
                       disabled={userPage === 1}
                     >
                       <ChevronLeft className="h-4 w-4" />
-                      Previous
+                      <span className="hidden sm:inline">Previous</span>
                     </Button>
-                    <span className="text-sm">
+                    <span className="text-sm whitespace-nowrap">
                       Page {userPage} of {totalUserPages}
                     </span>
                     <Button
@@ -383,7 +383,7 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
                       onClick={() => setUserPage(p => Math.min(totalUserPages, p + 1))}
                       disabled={userPage === totalUserPages}
                     >
-                      Next
+                      <span className="hidden sm:inline">Next</span>
                       <ChevronRight className="h-4 w-4" />
                     </Button>
                   </div>
@@ -421,41 +421,46 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
                       return (
                         <div
                           key={test.id}
-                          className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
+                          className="flex flex-col gap-3 p-4 border rounded-lg hover:bg-muted/50 transition-colors"
                         >
-                          <div className="space-y-1 flex-1">
-                            <div className="flex items-center gap-2">
-                              <Globe className="h-4 w-4 text-muted-foreground" />
-                              <p className="font-medium text-sm truncate max-w-md">{test.page_url}</p>
-                              <Badge
-                                variant={
-                                  test.status === "completed" ? "default" :
-                                  test.status === "failed" ? "destructive" :
-                                  test.status === "running" ? "secondary" : "outline"
-                                }
-                              >
-                                {test.status}
-                              </Badge>
-                              {test.overall_score !== null && (
-                                <Badge variant="outline" className={
-                                  test.overall_score >= 90 ? "text-green-600" :
-                                  test.overall_score >= 70 ? "text-yellow-600" : "text-red-600"
-                                }>
-                                  Score: {test.overall_score}/100
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="space-y-2 flex-1 min-w-0">
+                              <div className="flex items-start gap-2">
+                                <Globe className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                                <p className="font-medium text-sm break-all flex-1">{test.page_url}</p>
+                              </div>
+                              <div className="flex items-center gap-2 flex-wrap pl-6">
+                                <Badge
+                                  variant={
+                                    test.status === "completed" ? "default" :
+                                    test.status === "failed" ? "destructive" :
+                                    test.status === "running" ? "secondary" : "outline"
+                                  }
+                                  className="shrink-0"
+                                >
+                                  {test.status}
                                 </Badge>
-                              )}
+                                {test.overall_score !== null && (
+                                  <Badge variant="outline" className={`shrink-0 ${
+                                    test.overall_score >= 90 ? "text-green-600" :
+                                    test.overall_score >= 70 ? "text-yellow-600" : "text-red-600"
+                                  }`}>
+                                    Score: {test.overall_score}/100
+                                  </Badge>
+                                )}
+                              </div>
                             </div>
-                            <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                              <span>User: {test.profiles?.email || "Unknown"}</span>
-                              <span>{new Date(test.created_at).toLocaleString()}</span>
-                            </div>
+                            <Link
+                              href={`/test/${test.id}`}
+                              className="text-sm text-primary hover:underline whitespace-nowrap shrink-0"
+                            >
+                              View Report →
+                            </Link>
                           </div>
-                          <Link
-                            href={`/test/${test.id}`}
-                            className="text-sm text-primary hover:underline whitespace-nowrap"
-                          >
-                            View Report →
-                          </Link>
+                          <div className="flex flex-col gap-1 text-xs text-muted-foreground pl-6">
+                            <span className="break-all">User: {test.profiles?.email || "Unknown"}</span>
+                            <span className="whitespace-nowrap">{new Date(test.created_at).toLocaleString()}</span>
+                          </div>
                         </div>
                       );
                     } else {
@@ -475,32 +480,40 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
                           key={batch.batch_id}
                           className="p-4 border-2 border-primary/20 rounded-lg hover:bg-muted/50 transition-colors"
                         >
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2 flex-1">
-                              <Layers className="h-4 w-4 text-primary" />
-                              <p className="font-semibold text-sm">{batch.batch_name}</p>
-                              <Badge variant="outline">{batch.tests.length} URLs</Badge>
-                              {averageScore !== null && (
-                                <Badge variant="outline" className={
-                                  averageScore >= 90 ? "text-green-600" :
-                                  averageScore >= 70 ? "text-yellow-600" : "text-red-600"
-                                }>
-                                  Avg: {averageScore}/100
-                                </Badge>
-                              )}
+                          <div className="flex flex-col gap-3">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-start gap-2 flex-1 min-w-0">
+                                <Layers className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                                <div className="flex flex-col gap-2 flex-1 min-w-0">
+                                  <p className="font-semibold text-sm break-words">{batch.batch_name}</p>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <Badge variant="outline" className="shrink-0">{batch.tests.length} URLs</Badge>
+                                    {averageScore !== null && (
+                                      <Badge variant="outline" className={`shrink-0 ${
+                                        averageScore >= 90 ? "text-green-600" :
+                                        averageScore >= 70 ? "text-yellow-600" : "text-red-600"
+                                      }`}>
+                                        Avg: {averageScore}/100
+                                      </Badge>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                              <Link
+                                href={`/test/batch/${batch.batch_id}`}
+                                className="text-sm text-primary hover:underline whitespace-nowrap shrink-0"
+                              >
+                                View Batch →
+                              </Link>
                             </div>
-                            <Link
-                              href={`/test/batch/${batch.batch_id}`}
-                              className="text-sm text-primary hover:underline whitespace-nowrap"
-                            >
-                              View Batch →
-                            </Link>
-                          </div>
-                          <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                            <span>User: {batch.tests[0].profiles?.email || "Unknown"}</span>
-                            <span>{new Date(batch.created_at).toLocaleString()}</span>
-                            <span className="text-green-600">{completedTests} completed</span>
-                            {failedTests > 0 && <span className="text-red-600">{failedTests} failed</span>}
+                            <div className="flex flex-col gap-1 text-xs text-muted-foreground pl-6">
+                              <span className="break-all">User: {batch.tests[0].profiles?.email || "Unknown"}</span>
+                              <div className="flex items-center gap-3 flex-wrap">
+                                <span className="whitespace-nowrap">{new Date(batch.created_at).toLocaleString()}</span>
+                                <span className="text-green-600 whitespace-nowrap">{completedTests} completed</span>
+                                {failedTests > 0 && <span className="text-red-600 whitespace-nowrap">{failedTests} failed</span>}
+                              </div>
+                            </div>
                           </div>
                         </div>
                       );
@@ -511,8 +524,8 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
               
               {/* Test Pagination */}
               {totalTestPages > 1 && (
-                <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                  <p className="text-sm text-muted-foreground">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t">
+                  <p className="text-sm text-muted-foreground text-center sm:text-left">
                     Showing {((testPage - 1) * testsPerPage) + 1} to {Math.min(testPage * testsPerPage, allItems.length)} of {allItems.length} items
                   </p>
                   <div className="flex items-center gap-2">
@@ -523,9 +536,9 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
                       disabled={testPage === 1}
                     >
                       <ChevronLeft className="h-4 w-4" />
-                      Previous
+                      <span className="hidden sm:inline">Previous</span>
                     </Button>
-                    <span className="text-sm">
+                    <span className="text-sm whitespace-nowrap">
                       Page {testPage} of {totalTestPages}
                     </span>
                     <Button
@@ -534,7 +547,7 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
                       onClick={() => setTestPage(p => Math.min(totalTestPages, p + 1))}
                       disabled={testPage === totalTestPages}
                     >
-                      Next
+                      <span className="hidden sm:inline">Next</span>
                       <ChevronRight className="h-4 w-4" />
                     </Button>
                   </div>
