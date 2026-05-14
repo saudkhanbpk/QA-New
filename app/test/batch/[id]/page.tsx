@@ -57,7 +57,7 @@ export default async function BatchViewPage({ params }: PageProps) {
   const completedTests = runs.filter(r => r.status === "completed").length;
   const failedTests = runs.filter(r => r.status === "failed").length;
   const runningTests = runs.filter(r => r.status === "running").length;
-  
+
   // Calculate average score
   const completedScores = runs
     .filter(r => r.status === "completed" && r.overall_score !== null)
@@ -125,10 +125,9 @@ export default async function BatchViewPage({ params }: PageProps) {
             </CardHeader>
             <CardContent>
               {averageScore !== null ? (
-                <div className={`text-2xl font-bold ${
-                  averageScore >= 90 ? "text-green-600" :
+                <div className={`text-2xl font-bold ${averageScore >= 90 ? "text-green-600" :
                   averageScore >= 70 ? "text-yellow-600" : "text-red-600"
-                }`}>
+                  }`}>
                   {averageScore}
                 </div>
               ) : (
@@ -148,10 +147,10 @@ export default async function BatchViewPage({ params }: PageProps) {
               {runs.map((run, index) => (
                 <div
                   key={run.id}
-                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
+                  className="flex flex-col md:flex-row md:items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors gap-4"
                 >
-                  <div className="flex items-center gap-4 flex-1 min-w-0">
-                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-muted text-sm font-medium">
+                  <div className="flex items-start md:items-center gap-4 flex-1 min-w-0">
+                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-muted text-sm font-medium shrink-0 mt-0.5 md:mt-0">
                       {index + 1}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -160,39 +159,40 @@ export default async function BatchViewPage({ params }: PageProps) {
                         <p className="font-medium text-sm truncate">{run.page_url}</p>
                       </div>
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Clock className="h-3 w-3" />
-                        {new Date(run.created_at).toLocaleTimeString()}
+                        <Clock className="h-3 w-3 shrink-0" />
+                        <span className="truncate">{new Date(run.created_at).toLocaleTimeString()}</span>
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 shrink-0">
+                  <div className="flex flex-wrap items-center justify-between md:justify-end gap-3 shrink-0 pl-12 md:pl-0">
                     {run.status === "completed" && run.overall_score !== null && (
                       <div className="text-center px-3 py-1 rounded-md bg-muted">
                         <p className="text-xs text-muted-foreground">Score</p>
-                        <p className={`text-lg font-bold ${
-                          run.overall_score >= 90 ? "text-green-600" :
+                        <p className={`text-base font-bold ${run.overall_score >= 90 ? "text-green-600" :
                           run.overall_score >= 70 ? "text-yellow-600" :
-                          run.overall_score >= 50 ? "text-orange-600" :
-                          "text-red-600"
-                        }`}>
+                            run.overall_score >= 50 ? "text-orange-600" :
+                              "text-red-600"
+                          }`}>
                           {run.overall_score}
                         </p>
                       </div>
                     )}
-                    <Badge
-                      variant={
-                        run.status === "completed" ? "default" :
-                        run.status === "failed" ? "destructive" :
-                        run.status === "running" ? "secondary" : "outline"
-                      }
-                    >
-                      {run.status}
-                    </Badge>
-                    <Link href={`/test/${run.id}`}>
-                      <Button variant="outline" size="sm">
-                        View Report
-                      </Button>
-                    </Link>
+                    <div className="flex items-center gap-3 w-full sm:w-auto">
+                      <Badge
+                        variant={
+                          run.status === "completed" ? "default" :
+                            run.status === "failed" ? "destructive" :
+                              run.status === "running" ? "secondary" : "outline"
+                        }
+                      >
+                        {run.status}
+                      </Badge>
+                      <Link href={`/test/${run.id}`} className="flex-1 sm:flex-none">
+                        <button className="w-full text-sm ">
+                          View Report
+                        </button>
+                      </Link>
+                    </div>
                   </div>
                 </div>
               ))}

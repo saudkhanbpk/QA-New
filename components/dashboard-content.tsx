@@ -97,14 +97,14 @@ export function DashboardContent({ testRuns }: DashboardContentProps) {
 
   return (
     <main className="flex-1 container py-8 max-w-5xl">
-      <div className="flex items-center justify-between mb-8">
-        <div>
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground text-sm mt-1">
+          <p className="text-muted-foreground text-sm mt-1 truncate">
             {totalItems} test{totalItems !== 1 ? "s" : ""} total ({batches.length} batch{batches.length !== 1 ? "es" : ""}, {singleTests.length} single)
           </p>
         </div>
-        <Link href="/test/new">
+        <Link href="/test/new" className="shrink-0">
           <Button className="gap-2">
             <Plus className="h-4 w-4" />
             New Test
@@ -205,8 +205,8 @@ export function DashboardContent({ testRuns }: DashboardContentProps) {
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-between mt-6">
-              <p className="text-sm text-muted-foreground">
+            <div className="flex flex-col sm:flex-row items-center justify-between mt-6 gap-4">
+              <p className="text-sm text-muted-foreground text-center sm:text-left">
                 Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalItems)} of {totalItems} items
               </p>
               <div className="flex items-center gap-2">
@@ -257,47 +257,52 @@ function BatchRow({ batch }: { batch: BatchGroup }) {
   return (
     <Card className="border-l-4 border-l-primary">
       <CardContent className="py-4">
-        <div className="flex items-center justify-between gap-4 mb-3">
-          <div className="flex items-center gap-3 min-w-0 flex-1">
-            <Layers className="h-5 w-5 text-primary shrink-0" />
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-3">
+          <div className="flex items-start md:items-center gap-3 min-w-0 flex-1">
+            <Layers className="h-5 w-5 text-primary shrink-0 mt-0.5 md:mt-0" />
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold">{batch.batch_name}</p>
+              <p className="text-sm font-semibold truncate">{batch.batch_name}</p>
               <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
-                <Clock className="h-3 w-3" />
-                {new Date(batch.created_at).toLocaleString()}
+                <Clock className="h-3 w-3 shrink-0" />
+                <span className="truncate">{new Date(batch.created_at).toLocaleString()}</span>
               </div>
             </div>
+            <Badge variant={variant} className="md:hidden shrink-0">{label}</Badge>
           </div>
-          <div className="flex items-center gap-3 shrink-0">
-            <div className="text-center px-3 py-1 rounded-md bg-muted">
-              <p className="text-xs text-muted-foreground">URLs</p>
-              <p className="text-lg font-bold">{batch.total_tests}</p>
-            </div>
-            {batch.average_score !== null && (
+          <div className="flex flex-wrap items-center justify-between md:justify-end gap-3 shrink-0">
+            <div className="flex gap-3">
               <div className="text-center px-3 py-1 rounded-md bg-muted">
-                <p className="text-xs text-muted-foreground">Avg Score</p>
-                <p className={`text-lg font-bold ${
-                  batch.average_score >= 90 ? "text-green-600" :
-                  batch.average_score >= 70 ? "text-yellow-600" :
-                  batch.average_score >= 50 ? "text-orange-600" :
-                  "text-red-600"
-                }`}>
-                  {batch.average_score}
-                </p>
+                <p className="text-xs text-muted-foreground">URLs</p>
+                <p className="text-base font-bold">{batch.total_tests}</p>
               </div>
-            )}
-            <Badge variant={variant}>{label}</Badge>
-            <Link href={`/test/batch/${batch.batch_id}`}>
-              <Button variant="outline" size="sm" className="gap-1">
-                View Batch
-                <ArrowRight className="h-3 w-3" />
-              </Button>
-            </Link>
+              {batch.average_score !== null && (
+                <div className="text-center px-3 py-1 rounded-md bg-muted">
+                  <p className="text-xs text-muted-foreground">Avg Score</p>
+                  <p className={`text-base font-bold ${
+                    batch.average_score >= 90 ? "text-green-600" :
+                    batch.average_score >= 70 ? "text-yellow-600" :
+                    batch.average_score >= 50 ? "text-orange-600" :
+                    "text-red-600"
+                  }`}>
+                    {batch.average_score}
+                  </p>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-3 w-full sm:w-auto">
+              <Badge variant={variant} className="hidden md:inline-flex">{label}</Badge>
+              <Link href={`/test/batch/${batch.batch_id}`} className="w-full sm:w-auto flex-1">
+                <Button variant="outline" size="sm" className="w-full gap-1">
+                  View Batch
+                  <ArrowRight className="h-3 w-3" />
+                </Button>
+              </Link>
+            </div>
           </div>
         </div>
         
         {/* Show progress */}
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span className="text-green-600">{batch.completed_tests} completed</span>
           {batch.failed_tests > 0 && <span className="text-red-600">{batch.failed_tests} failed</span>}
           {anyRunning && <span className="text-yellow-600">{batch.total_tests - batch.completed_tests - batch.failed_tests} running</span>}
@@ -318,22 +323,23 @@ function TestRunRow({ run }: { run: TestRun }) {
 
   return (
     <Card>
-      <CardContent className="flex items-center justify-between py-4 gap-4">
-        <div className="flex items-center gap-3 min-w-0">
-          <Globe className="h-4 w-4 text-muted-foreground shrink-0" />
-          <div className="min-w-0">
+      <CardContent className="flex flex-col md:flex-row md:items-center justify-between py-4 gap-4">
+        <div className="flex items-start md:items-center gap-3 min-w-0 flex-1">
+          <Globe className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5 md:mt-0" />
+          <div className="min-w-0 flex-1">
             <p className="text-sm font-medium truncate">{run.page_url}</p>
             <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
-              <Clock className="h-3 w-3" />
-              {new Date(run.created_at).toLocaleString()}
+              <Clock className="h-3 w-3 shrink-0" />
+              <span className="truncate">{new Date(run.created_at).toLocaleString()}</span>
             </div>
           </div>
+          <Badge variant={variant as any} className="md:hidden shrink-0">{label}</Badge>
         </div>
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex flex-wrap items-center justify-between md:justify-end gap-3 shrink-0">
           {run.status === "completed" && run.overall_score !== null && (
             <div className="text-center px-3 py-1 rounded-md bg-muted">
               <p className="text-xs text-muted-foreground">Score</p>
-              <p className={`text-lg font-bold ${
+              <p className={`text-base font-bold ${
                 run.overall_score >= 90 ? "text-green-600" :
                 run.overall_score >= 70 ? "text-yellow-600" :
                 run.overall_score >= 50 ? "text-orange-600" :
@@ -343,13 +349,15 @@ function TestRunRow({ run }: { run: TestRun }) {
               </p>
             </div>
           )}
-          <Badge variant={variant as "success"}>{label}</Badge>
-          <Link href={`/test/${run.id}`}>
-            <Button variant="outline" size="sm" className="gap-1">
-              View Report
-              <ArrowRight className="h-3 w-3" />
-            </Button>
-          </Link>
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <Badge variant={variant as any} className="hidden md:inline-flex">{label}</Badge>
+            <Link href={`/test/${run.id}`} className="w-full sm:w-auto flex-1">
+              <Button variant="outline" size="sm" className="w-full gap-1">
+                View Report
+                <ArrowRight className="h-3 w-3" />
+              </Button>
+            </Link>
+          </div>
         </div>
       </CardContent>
     </Card>

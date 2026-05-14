@@ -15,9 +15,6 @@ export function Navbar({ userEmail, isAdmin }: NavbarProps) {
   const router = useRouter();
   const supabase = createClient();
 
-  // Debug: Log the email and admin status
-  console.log("Navbar - Email:", userEmail, "IsAdmin:", isAdmin);
-
   async function handleSignOut() {
     await supabase.auth.signOut();
     router.push("/");
@@ -33,7 +30,7 @@ export function Navbar({ userEmail, isAdmin }: NavbarProps) {
           <span className="sm:hidden">QA</span>
         </Link>
 
-        <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto">
+        <div className="flex items-center gap-1 sm:gap-2">
           {userEmail ? (
             <>
               <Link href="/dashboard">

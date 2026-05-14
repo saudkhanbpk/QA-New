@@ -49,7 +49,7 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
   const [banModalOpen, setBanModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<{ id: string; email: string; banned: boolean } | null>(null);
-  
+
   // Pagination states
   const [userPage, setUserPage] = useState(1);
   const [testPage, setTestPage] = useState(1);
@@ -114,16 +114,16 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
 
   // Combine batches and single tests for pagination
   const allItems = [...batchArray, ...singleTests.map(t => ({ single: true, test: t }))];
-  
+
   // Pagination calculations
   const totalUserPages = Math.ceil(filteredProfiles.length / usersPerPage);
   const totalTestPages = Math.ceil(allItems.length / testsPerPage);
-  
+
   const paginatedUsers = filteredProfiles.slice(
     (userPage - 1) * usersPerPage,
     userPage * usersPerPage
   );
-  
+
   const paginatedItems = allItems.slice(
     (testPage - 1) * testsPerPage,
     testPage * testsPerPage
@@ -296,7 +296,7 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
                     const completedCount = userTests.filter(t => t.status === "completed").length;
                     const isBanned = profile.banned || false;
                     const isLoading = loading === profile.id;
-                    
+
                     return (
                       <div
                         key={profile.id}
@@ -357,7 +357,7 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
                   })
                 )}
               </div>
-              
+
               {/* User Pagination */}
               {totalUserPages > 1 && (
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t">
@@ -521,7 +521,7 @@ export function AdminDashboard({ profiles, testRuns, stats }: AdminDashboardProp
                   })
                 )}
               </div>
-              
+
               {/* Test Pagination */}
               {totalTestPages > 1 && (
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t">
