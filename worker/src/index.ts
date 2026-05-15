@@ -61,14 +61,14 @@ async function main() {
     }
   });
 
-  console.log(`Starting worker for Test Run ID: ${testRunId}, URL: ${url}`);
+  console.log(`🚀 Fargate Worker started for Test Run: ${testRunId} | URL: ${url}`);
 
   try {
     await runTests(testRunId, url, viewports, checks, admin);
-    console.log("Test completed successfully.");
+    console.log("✅ Test completed successfully.");
     process.exit(0);
   } catch (err) {
-    console.error("Test runner error:", err);
+    console.error("❌ Test runner error:", err);
     await admin.from("test_runs")
       .update({ status: "failed", completed_at: new Date().toISOString() })
       .eq("id", testRunId);

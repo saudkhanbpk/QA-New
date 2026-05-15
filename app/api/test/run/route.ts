@@ -66,71 +66,69 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Failed to create test run: ${runError?.message || 'Unknown DB error'}` }, { status: 500 });
   }
 
-  // ⚡ Offload to AWS Fargate
-  try {
-    console.log(`Triggering ECS Fargate task for test run ${testRun.id}...`);
+    // ⚡ Offload to AWS Fargate (Massive Scaling)
+    try {
+      console.log(`Triggering ECS Fargate task for test run ${testRun.id}...`);
 
-    // Fallback to eu-central-1 if not specified
-    const region = process.env.AWS_REGION || "eu-central-1";
-
-    const ecsClient = new ECSClient({
-      region,
-      credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || ""
-      }
-    });
-
-    const subnets = process.env.AWS_SUBNETS ? process.env.AWS_SUBNETS.split(',') : [];
-
-    await ecsClient.send(new RunTaskCommand({
-      cluster: "qa-worker-cluster",
-      taskDefinition: "qa-worker-task",
-      launchType: "FARGATE",
-      networkConfiguration: {
-        awsvpcConfiguration: {
-          subnets: subnets,
-          assignPublicIp: "ENABLED"
+      const region = process.env.AWS_REGION || "eu-central-1";
+      const ecsClient = new ECSClient({
+        region,
+        credentials: {
+          accessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
+          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || ""
         }
-      },
-      overrides: {
-        containerOverrides: [
-          {
-            name: "worker",
-            environment: [
-              { name: "TEST_RUN_ID", value: testRun.id },
-              { name: "TARGET_URL", value: url },
-              { name: "VIEWPORTS", value: JSON.stringify(viewports) },
-              { name: "CHECKS", value: JSON.stringify(checks) },
-              { name: "NEXT_PUBLIC_SUPABASE_URL", value: process.env.NEXT_PUBLIC_SUPABASE_URL || "" },
-              { name: "SUPABASE_SERVICE_ROLE_KEY", value: process.env.SUPABASE_SERVICE_ROLE_KEY || "" }
-            ],
-          },
-        ],
-      },
-    }));
+      });
 
-    console.log(`Successfully triggered ECS task for ${testRun.id}`);
-  } catch (awsError) {
-    // ⚡ SAFETY CHECK: Before marking as failed, verify if it was already marked as completed/running by the worker
-    // This prevents race conditions where the ECS trigger returns an error but the test actually started.
-    const { data: currentTest } = await admin
-      .from("test_runs")
-      .select("status")
-      .eq("id", testRun.id)
-      .single();
+      const subnets = process.env.AWS_SUBNETS ? process.env.AWS_SUBNETS.split(',') : [];
+
+      await ecsClient.send(new RunTaskCommand({
+        cluster: "qa-worker-cluster",
+        taskDefinition: "qa-worker-task",
+        launchType: "FARGATE",
+        networkConfiguration: {
+          awsvpcConfiguration: {
+            subnets: subnets,
+            assignPublicIp: "ENABLED"
+          }
+        },
+        overrides: {
+          containerOverrides: [
+            {
+              name: "worker",
+              environment: [
+                { name: "TEST_RUN_ID", value: testRun.id },
+                { name: "TARGET_URL", value: url },
+                { name: "VIEWPORTS", value: JSON.stringify(viewports) },
+                { name: "CHECKS", value: JSON.stringify(checks) },
+                { name: "NEXT_PUBLIC_SUPABASE_URL", value: process.env.NEXT_PUBLIC_SUPABASE_URL || "" },
+                { name: "SUPABASE_SERVICE_ROLE_KEY", value: process.env.SUPABASE_SERVICE_ROLE_KEY || "" }
+              ],
+            },
+          ],
+        },
+      }));
+
+      console.log(`Successfully triggered ECS task for ${testRun.id}`);
+    } catch (awsError) {
+      console.error("ECS error:", awsError);
       
-    if (currentTest?.status === 'running' || currentTest?.status === 'completed') {
-      console.log(`Test ${testRun.id} is already ${currentTest.status}, skipping failure update.`);
-      return NextResponse.json({ testRunId: testRun.id, status: currentTest.status });
+      // ⚡ SAFETY CHECK
+      const { data: currentTest } = await admin
+        .from("test_runs")
+        .select("status")
+        .eq("id", testRun.id)
+        .single();
+        
+      if (currentTest?.status === 'running' || currentTest?.status === 'completed') {
+        return NextResponse.json({ testRunId: testRun.id, status: currentTest.status });
+      }
+
+      await admin.from("test_runs")
+        .update({ status: "failed", completed_at: new Date().toISOString() })
+        .eq("id", testRun.id);
+
+      return NextResponse.json({ error: "Failed to start Fargate worker", awsError }, { status: 500 });
     }
-
-    await admin.from("test_runs")
-      .update({ status: "failed", completed_at: new Date().toISOString() })
-      .eq("id", testRun.id);
-
-    return NextResponse.json({ error: "Failed to start background worker", awsError }, { status: 500 });
-  }
 
   return NextResponse.json({ testRunId: testRun.id });
 }
