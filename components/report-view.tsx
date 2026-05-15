@@ -464,7 +464,11 @@ export function ReportView({ report }: ReportViewProps) {
 
         <TabsContent value="performance" className="space-y-3 mt-4">
           <CategoryHeader results={byCategory.performance} />
-          {byCategory.performance.length === 0 ? <EmptyState label="performance" /> : byCategory.performance.map((r) => <ResultCard key={r.id} result={r} />)}
+          {byCategory.performance.length === 0 ? (
+            <EmptyState label="performance" />
+          ) : (
+            <PerformanceTabContent results={byCategory.performance} />
+          )}
         </TabsContent>
 
         <TabsContent value="broken_links" className="space-y-3 mt-4">
@@ -587,6 +591,73 @@ function EmptyState({ label }: { label: string }) {
         No {label} checks were run.
       </CardContent>
     </Card>
+  );
+}
+
+function PerformanceTabContent({ results }: { results: TestResult[] }) {
+  // Group performance results by viewport
+  const viewports = ["Mobile", "Desktop", "Tablet"];
+  
+  const byViewport = {
+    mobile: results.filter(r => r.check_name.includes("(Mobile)")),
+    desktop: results.filter(r => r.check_name.includes("(Desktop)")),
+    tablet: results.filter(r => r.check_name.includes("(Tablet)")),
+    other: results.filter(r => !viewports.some(v => r.check_name.includes(`(${v})`))),
+  };
+
+  return (
+    <div className="space-y-8">
+      {byViewport.mobile.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 pb-2 border-b">
+            <h3 className="text-sm font-semibold text-primary flex items-center gap-2">
+              <Smartphone className="h-4 w-4" /> Mobile Performance
+            </h3>
+            <span className="text-xs text-muted-foreground">
+              ({byViewport.mobile.filter(r => r.status === "pass").length}/{byViewport.mobile.length} passed)
+            </span>
+          </div>
+          {byViewport.mobile.map((r) => <ResultCard key={r.id} result={r} />)}
+        </div>
+      )}
+
+      {byViewport.desktop.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 pb-2 border-b">
+            <h3 className="text-sm font-semibold text-primary flex items-center gap-2">
+              <Monitor className="h-4 w-4" /> Desktop Performance
+            </h3>
+            <span className="text-xs text-muted-foreground">
+              ({byViewport.desktop.filter(r => r.status === "pass").length}/{byViewport.desktop.length} passed)
+            </span>
+          </div>
+          {byViewport.desktop.map((r) => <ResultCard key={r.id} result={r} />)}
+        </div>
+      )}
+
+      {byViewport.tablet.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 pb-2 border-b">
+            <h3 className="text-sm font-semibold text-primary flex items-center gap-2">
+              <Tablet className="h-4 w-4" /> Tablet Performance
+            </h3>
+            <span className="text-xs text-muted-foreground">
+              ({byViewport.tablet.filter(r => r.status === "pass").length}/{byViewport.tablet.length} passed)
+            </span>
+          </div>
+          {byViewport.tablet.map((r) => <ResultCard key={r.id} result={r} />)}
+        </div>
+      )}
+
+      {byViewport.other.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 pb-2 border-b">
+            <h3 className="text-sm font-semibold text-primary">⚡ General Performance</h3>
+          </div>
+          {byViewport.other.map((r) => <ResultCard key={r.id} result={r} />)}
+        </div>
+      )}
+    </div>
   );
 }
 

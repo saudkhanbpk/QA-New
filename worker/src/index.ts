@@ -156,152 +156,163 @@ async function runTests(testRunId: string, url: string, viewports: Viewport[], c
     }
   }
 
-  // ── PERFORMANCE via Lighthouse (desktop viewport) ──────────────────────
+  // ── PERFORMANCE via Lighthouse ──────────────────────
   if (checks.performance) {
-    let lhBrowser;
-    try {
-      const { chromium } = await import("playwright");
+    for (const viewport of viewports) {
+      console.log(`Running Lighthouse performance scan for ${viewport}...`);
+      let lhBrowser;
+      try {
+        const { chromium } = await import("playwright");
 
-      // ⚡ Use dynamic port to avoid conflicts when running multiple tests in parallel
-      const debugPort = 9222 + Math.floor(Math.random() * 1000);
+        // ⚡ Use dynamic port to avoid conflicts
+        const debugPort = 9222 + Math.floor(Math.random() * 1000);
 
-      lhBrowser = await chromium.launch({
-        headless: true,
-        args: [
-          `--remote-debugging-port=${debugPort}`,
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-        ],
-      });
-      await new Promise(r => setTimeout(r, 1000)); // ⚡ Increased to 1000ms for stability
-      const lighthouse = (await eval("import('lighthouse')")).default;
+        lhBrowser = await chromium.launch({
+          headless: true,
+          args: [
+            `--remote-debugging-port=${debugPort}`,
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+          ],
+        });
+        await new Promise(r => setTimeout(r, 1000));
+        const lighthouse = (await eval("import('lighthouse')")).default;
 
-      // ⚡ Faster Lighthouse config - reduced throttling for quicker results
-      const lhResult = await lighthouse(url, {
-        port: debugPort,
-        output: "json",
-        logLevel: "error",
-        onlyCategories: ["performance"],
-        formFactor: "mobile",
-        throttling: {
-          rttMs: 40,
-          throughputKbps: 10 * 1024,
-          cpuSlowdownMultiplier: 2, // ⚡ Reduced from 4 to 2 for faster scan
-          requestLatencyMs: 0,
-          downloadThroughputKbps: 0,
-          uploadThroughputKbps: 0,
-        },
-        screenEmulation: {
-          mobile: true,
-          width: 412,
-          height: 823,
-          deviceScaleFactor: 2.625,
-          disabled: false,
-        },
-        skipAudits: ['screenshot-thumbnails', 'final-screenshot'], // ⚡ Skip unnecessary audits
-      });
+        const isMobile = viewport !== "desktop";
+        const { width, height } = VIEWPORT_SIZES[viewport];
 
-      const lhr = lhResult?.lhr;
-      if (lhr) {
-        const perfScore = Math.round((lhr.categories.performance?.score ?? 0) * 100);
-        const audits = lhr.audits;
-
-        // Correct metric extraction (values are in milliseconds)
-        const lcp = Math.round((audits["largest-contentful-paint"]?.numericValue ?? 0)) / 1000;
-        const fcp = Math.round((audits["first-contentful-paint"]?.numericValue ?? 0)) / 1000;
-        const ttfb = Math.round(audits["server-response-time"]?.numericValue ?? 0);
-        const cls = Math.round((audits["cumulative-layout-shift"]?.numericValue ?? 0) * 1000) / 1000;
-        const tbt = Math.round(audits["total-blocking-time"]?.numericValue ?? 0);
-        const si = Math.round((audits["speed-index"]?.numericValue ?? 0)) / 1000;
-        const tti = Math.round((audits["interactive"]?.numericValue ?? 0)) / 1000;
-
-        results.push({
-          test_run_id: testRunId, category: "performance", check_name: "Lighthouse Performance Score",
-          status: perfScore >= 90 ? "pass" : perfScore >= 50 ? "warning" : "fail",
-          severity: perfScore >= 90 ? "low" : perfScore >= 50 ? "medium" : "critical",
-          message: `Performance score: ${perfScore}/100 (Mobile, 4G throttled)`,
-          fix_recommendation: perfScore < 90 ? getFixRecommendation("performance_score_low") : "", screenshot_url: null
+        // ⚡ Faster Lighthouse config
+        const lhResult = await lighthouse(url, {
+          port: debugPort,
+          output: "json",
+          logLevel: "error",
+          onlyCategories: ["performance"],
+          formFactor: isMobile ? "mobile" : "desktop",
+          throttling: isMobile ? {
+            rttMs: 40,
+            throughputKbps: 10 * 1024,
+            cpuSlowdownMultiplier: 2,
+            requestLatencyMs: 0,
+            downloadThroughputKbps: 0,
+            uploadThroughputKbps: 0,
+          } : {
+            rttMs: 20,
+            throughputKbps: 20 * 1024,
+            cpuSlowdownMultiplier: 1,
+            requestLatencyMs: 0,
+            downloadThroughputKbps: 0,
+            uploadThroughputKbps: 0,
+          },
+          screenEmulation: {
+            mobile: isMobile,
+            width,
+            height,
+            deviceScaleFactor: isMobile ? 2.625 : 1,
+            disabled: false,
+          },
+          skipAudits: ['screenshot-thumbnails', 'final-screenshot'],
         });
 
-        // LCP
-        results.push({
-          test_run_id: testRunId, category: "performance", check_name: "Largest Contentful Paint (LCP)",
-          status: lcp <= 2.5 ? "pass" : lcp <= 4 ? "warning" : "fail",
-          severity: lcp <= 2.5 ? "low" : lcp <= 4 ? "medium" : "critical",
-          message: `LCP: ${lcp.toFixed(1)}s (target ≤ 2.5s)`,
-          fix_recommendation: lcp > 2.5 ? getFixRecommendation("lcp_slow") : "", screenshot_url: null
-        });
+        const lhr = lhResult?.lhr;
+        if (lhr) {
+          const perfScore = Math.round((lhr.categories.performance?.score ?? 0) * 100);
+          const audits = lhr.audits;
+          const vName = viewport.charAt(0).toUpperCase() + viewport.slice(1);
 
-        // FCP
-        results.push({
-          test_run_id: testRunId, category: "performance", check_name: "First Contentful Paint (FCP)",
-          status: fcp <= 1.8 ? "pass" : fcp <= 3 ? "warning" : "fail",
-          severity: fcp <= 1.8 ? "low" : fcp <= 3 ? "medium" : "critical",
-          message: `FCP: ${fcp.toFixed(1)}s (target ≤ 1.8s)`,
-          fix_recommendation: fcp > 1.8 ? getFixRecommendation("fcp_slow") : "", screenshot_url: null
-        });
+          // Correct metric extraction
+          const lcp = Math.round((audits["largest-contentful-paint"]?.numericValue ?? 0)) / 1000;
+          const fcp = Math.round((audits["first-contentful-paint"]?.numericValue ?? 0)) / 1000;
+          const ttfb = Math.round(audits["server-response-time"]?.numericValue ?? 0);
+          const cls = Math.round((audits["cumulative-layout-shift"]?.numericValue ?? 0) * 1000) / 1000;
+          const tbt = Math.round(audits["total-blocking-time"]?.numericValue ?? 0);
+          const si = Math.round((audits["speed-index"]?.numericValue ?? 0)) / 1000;
+          const tti = Math.round((audits["interactive"]?.numericValue ?? 0)) / 1000;
 
-        // TTFB
-        results.push({
-          test_run_id: testRunId, category: "performance", check_name: "Time to First Byte (TTFB)",
-          status: ttfb <= 600 ? "pass" : ttfb <= 1800 ? "warning" : "fail",
-          severity: ttfb <= 600 ? "low" : ttfb <= 1800 ? "medium" : "critical",
-          message: `TTFB: ${ttfb}ms (target ≤ 600ms)`,
-          fix_recommendation: ttfb > 600 ? getFixRecommendation("ttfb_slow") : "", screenshot_url: null
-        });
+          results.push({
+            test_run_id: testRunId, category: "performance", check_name: `Lighthouse Performance Score (${vName})`,
+            status: perfScore >= 90 ? "pass" : perfScore >= 50 ? "warning" : "fail",
+            severity: perfScore >= 90 ? "low" : perfScore >= 50 ? "medium" : "critical",
+            message: `Performance score: ${perfScore}/100 (${vName})`,
+            fix_recommendation: perfScore < 90 ? getFixRecommendation("performance_score_low") : "", screenshot_url: null
+          });
 
-        // CLS
-        results.push({
-          test_run_id: testRunId, category: "performance", check_name: "Cumulative Layout Shift (CLS)",
-          status: cls <= 0.1 ? "pass" : cls <= 0.25 ? "warning" : "fail",
-          severity: cls <= 0.1 ? "low" : cls <= 0.25 ? "medium" : "critical",
-          message: `CLS: ${cls.toFixed(3)} (target ≤ 0.1)`,
-          fix_recommendation: cls > 0.1 ? getFixRecommendation("cls_high") : "", screenshot_url: null
-        });
+          // LCP
+          results.push({
+            test_run_id: testRunId, category: "performance", check_name: `Largest Contentful Paint (${vName})`,
+            status: lcp <= 2.5 ? "pass" : lcp <= 4 ? "warning" : "fail",
+            severity: lcp <= 2.5 ? "low" : lcp <= 4 ? "medium" : "critical",
+            message: `LCP: ${lcp.toFixed(1)}s (${vName}, target ≤ 2.5s)`,
+            fix_recommendation: lcp > 2.5 ? getFixRecommendation("lcp_slow") : "", screenshot_url: null
+          });
 
-        // TBT
-        results.push({
-          test_run_id: testRunId, category: "performance", check_name: "Total Blocking Time (TBT)",
-          status: tbt <= 200 ? "pass" : tbt <= 600 ? "warning" : "fail",
-          severity: tbt <= 200 ? "low" : tbt <= 600 ? "medium" : "critical",
-          message: `TBT: ${tbt}ms (target ≤ 200ms)`,
-          fix_recommendation: tbt > 200 ? getFixRecommendation("tbt_high") : "", screenshot_url: null
-        });
+          // FCP
+          results.push({
+            test_run_id: testRunId, category: "performance", check_name: `First Contentful Paint (${vName})`,
+            status: fcp <= 1.8 ? "pass" : fcp <= 3 ? "warning" : "fail",
+            severity: fcp <= 1.8 ? "low" : fcp <= 3 ? "medium" : "critical",
+            message: `FCP: ${fcp.toFixed(1)}s (${vName}, target ≤ 1.8s)`,
+            fix_recommendation: fcp > 1.8 ? getFixRecommendation("fcp_slow") : "", screenshot_url: null
+          });
 
-        // Speed Index
-        results.push({
-          test_run_id: testRunId, category: "performance", check_name: "Speed Index",
-          status: si <= 3.4 ? "pass" : si <= 5.8 ? "warning" : "fail",
-          severity: si <= 3.4 ? "low" : si <= 5.8 ? "medium" : "critical",
-          message: `Speed Index: ${si.toFixed(1)}s (target ≤ 3.4s)`,
-          fix_recommendation: si > 3.4 ? getFixRecommendation("performance_score_low") : "", screenshot_url: null
-        });
+          // TTFB
+          results.push({
+            test_run_id: testRunId, category: "performance", check_name: `Time to First Byte (${vName})`,
+            status: ttfb <= 600 ? "pass" : ttfb <= 1800 ? "warning" : "fail",
+            severity: ttfb <= 600 ? "low" : ttfb <= 1800 ? "medium" : "critical",
+            message: `TTFB: ${ttfb}ms (${vName}, target ≤ 600ms)`,
+            fix_recommendation: ttfb > 600 ? getFixRecommendation("ttfb_slow") : "", screenshot_url: null
+          });
 
-        // TTI
+          // CLS
+          results.push({
+            test_run_id: testRunId, category: "performance", check_name: `Cumulative Layout Shift (${vName})`,
+            status: cls <= 0.1 ? "pass" : cls <= 0.25 ? "warning" : "fail",
+            severity: cls <= 0.1 ? "low" : cls <= 0.25 ? "medium" : "critical",
+            message: `CLS: ${cls.toFixed(3)} (${vName}, target ≤ 0.1)`,
+            fix_recommendation: cls > 0.1 ? getFixRecommendation("cls_high") : "", screenshot_url: null
+          });
+
+          // TBT
+          results.push({
+            test_run_id: testRunId, category: "performance", check_name: `Total Blocking Time (${vName})`,
+            status: tbt <= 200 ? "pass" : tbt <= 600 ? "warning" : "fail",
+            severity: tbt <= 200 ? "low" : tbt <= 600 ? "medium" : "critical",
+            message: `TBT: ${tbt}ms (${vName}, target ≤ 200ms)`,
+            fix_recommendation: tbt > 200 ? getFixRecommendation("tbt_high") : "", screenshot_url: null
+          });
+
+          // Speed Index
+          results.push({
+            test_run_id: testRunId, category: "performance", check_name: `Speed Index (${vName})`,
+            status: si <= 3.4 ? "pass" : si <= 5.8 ? "warning" : "fail",
+            severity: si <= 3.4 ? "low" : si <= 5.8 ? "medium" : "critical",
+            message: `Speed Index: ${si.toFixed(1)}s (${vName}, target ≤ 3.4s)`,
+            fix_recommendation: si > 3.4 ? getFixRecommendation("performance_score_low") : "", screenshot_url: null
+          });
+
+          // TTI
+          results.push({
+            test_run_id: testRunId, category: "performance", check_name: `Time to Interactive (${vName})`,
+            status: tti <= 3.8 ? "pass" : tti <= 7.3 ? "warning" : "fail",
+            severity: tti <= 3.8 ? "low" : tti <= 7.3 ? "medium" : "critical",
+            message: `TTI: ${tti.toFixed(1)}s (${vName}, target ≤ 3.8s)`,
+            fix_recommendation: tti > 3.8 ? getFixRecommendation("performance_score_low") : "", screenshot_url: null
+          });
+        }
+      } catch (lhErr) {
+        const errorMsg = lhErr instanceof Error ? lhErr.message : "unknown error";
+        console.error(`Lighthouse error (${viewport}):`, errorMsg.slice(0, 100));
         results.push({
-          test_run_id: testRunId, category: "performance", check_name: "Time to Interactive (TTI)",
-          status: tti <= 3.8 ? "pass" : tti <= 7.3 ? "warning" : "fail",
-          severity: tti <= 3.8 ? "low" : tti <= 7.3 ? "medium" : "critical",
-          message: `TTI: ${tti.toFixed(1)}s (target ≤ 3.8s)`,
-          fix_recommendation: tti > 3.8 ? getFixRecommendation("performance_score_low") : "", screenshot_url: null
+          test_run_id: testRunId, category: "performance", check_name: `Lighthouse Scan (${viewport})`,
+          status: "warning", severity: "low",
+          message: `Performance scan could not complete for ${viewport}: ${errorMsg.slice(0, 80)}`,
+          fix_recommendation: "", screenshot_url: null
         });
-      }
-    } catch (lhErr) {
-      // Suppress verbose Lighthouse errors in console (they're handled gracefully)
-      const errorMsg = lhErr instanceof Error ? lhErr.message : "unknown error";
-      if (!errorMsg.includes("performance mark")) {
-        console.error("Lighthouse error:", errorMsg.slice(0, 100));
-      }
-      results.push({
-        test_run_id: testRunId, category: "performance", check_name: "Lighthouse Scan",
-        status: "warning", severity: "low",
-        message: `Performance scan could not complete: ${errorMsg.slice(0, 80)}`,
-        fix_recommendation: "", screenshot_url: null
-      });
-    } finally {
-      if (lhBrowser) {
-        try { await lhBrowser.close(); } catch { /* ignore */ }
+      } finally {
+        if (lhBrowser) {
+          try { await lhBrowser.close(); } catch { /* ignore */ }
+        }
       }
     }
   }
