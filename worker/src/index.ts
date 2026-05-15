@@ -182,12 +182,12 @@ async function runTests(testRunId: string, url: string, viewports: Viewport[], c
         const isMobile = viewport !== "desktop";
         const { width, height } = VIEWPORT_SIZES[viewport];
 
-        // ⚡ Faster Lighthouse config
+        // ⚡ Full Lighthouse scan (Performance, Accessibility, Best Practices, SEO)
         const lhResult = await lighthouse(url, {
           port: debugPort,
           output: "json",
           logLevel: "error",
-          onlyCategories: ["performance"],
+          onlyCategories: ["performance", "accessibility", "best-practices", "seo"],
           formFactor: isMobile ? "mobile" : "desktop",
           throttling: isMobile ? {
             rttMs: 40,
@@ -216,7 +216,6 @@ async function runTests(testRunId: string, url: string, viewports: Viewport[], c
 
         const lhr = lhResult?.lhr;
         if (lhr) {
-          const perfScore = Math.round((lhr.categories.performance?.score ?? 0) * 100);
           const audits = lhr.audits;
           const vName = viewport.charAt(0).toUpperCase() + viewport.slice(1);
 
@@ -229,12 +228,44 @@ async function runTests(testRunId: string, url: string, viewports: Viewport[], c
           const si = Math.round((audits["speed-index"]?.numericValue ?? 0)) / 1000;
           const tti = Math.round((audits["interactive"]?.numericValue ?? 0)) / 1000;
 
+          // 1. Performance
+          const perfScore = Math.round((lhr.categories.performance?.score ?? 0) * 100);
           results.push({
             test_run_id: testRunId, category: "performance", check_name: `Lighthouse Performance Score (${vName})`,
             status: perfScore >= 90 ? "pass" : perfScore >= 50 ? "warning" : "fail",
             severity: perfScore >= 90 ? "low" : perfScore >= 50 ? "medium" : "critical",
             message: `Performance score: ${perfScore}/100 (${vName})`,
             fix_recommendation: perfScore < 90 ? getFixRecommendation("performance_score_low") : "", screenshot_url: null
+          });
+
+          // 2. Accessibility
+          const accScore = Math.round((lhr.categories.accessibility?.score ?? 0) * 100);
+          results.push({
+            test_run_id: testRunId, category: "others", check_name: `Accessibility Score (${vName})`,
+            status: accScore >= 90 ? "pass" : accScore >= 70 ? "warning" : "fail",
+            severity: accScore >= 90 ? "low" : accScore >= 70 ? "medium" : "critical",
+            message: `Accessibility score: ${accScore}/100 (${vName})`,
+            fix_recommendation: accScore < 90 ? "Improve accessibility by fixing WCAG violations identified in Lighthouse." : "", screenshot_url: null
+          });
+
+          // 3. Best Practices
+          const bpScore = Math.round((lhr.categories["best-practices"]?.score ?? 0) * 100);
+          results.push({
+            test_run_id: testRunId, category: "others", check_name: `Best Practices Score (${vName})`,
+            status: bpScore >= 90 ? "pass" : bpScore >= 70 ? "warning" : "fail",
+            severity: bpScore >= 90 ? "low" : bpScore >= 70 ? "medium" : "critical",
+            message: `Best Practices score: ${bpScore}/100 (${vName})`,
+            fix_recommendation: bpScore < 90 ? "Review web best practices for security and modern web standards." : "", screenshot_url: null
+          });
+
+          // 4. SEO
+          const seoScore = Math.round((lhr.categories.seo?.score ?? 0) * 100);
+          results.push({
+            test_run_id: testRunId, category: "others", check_name: `SEO Score (${vName})`,
+            status: seoScore >= 90 ? "pass" : seoScore >= 80 ? "warning" : "fail",
+            severity: seoScore >= 90 ? "low" : seoScore >= 80 ? "medium" : "critical",
+            message: `SEO score: ${seoScore}/100 (${vName})`,
+            fix_recommendation: seoScore < 90 ? "Optimize meta tags, crawlability, and mobile-friendliness for better search ranking." : "", screenshot_url: null
           });
 
           // LCP
@@ -435,7 +466,7 @@ async function runTests(testRunId: string, url: string, viewports: Viewport[], c
                 href: (a as HTMLAnchorElement).href,
                 text: a.textContent?.trim().slice(0, 40) || "unnamed",
                 isExternal: (a as HTMLAnchorElement).hostname !== window.location.hostname,
-              })).filter(l => l.href && l.href.startsWith("http")).slice(0, 20); // ⚡ Reduced from 30 to 20 for faster testing
+              })).filter(l => l.href && l.href.startsWith("http"));
             });
 
             const brokenLinks: string[] = [];
@@ -1049,10 +1080,10 @@ async function runTests(testRunId: string, url: string, viewports: Viewport[], c
 
   console.log(`Finalizing test run ${testRunId} with score ${overallScore}...`);
   const { error: finalUpdateError } = await admin.from("test_runs")
-    .update({ 
-      status: "completed", 
-      overall_score: overallScore, 
-      completed_at: new Date().toISOString() 
+    .update({
+      status: "completed",
+      overall_score: overallScore,
+      completed_at: new Date().toISOString()
     })
     .eq("id", testRunId);
 
