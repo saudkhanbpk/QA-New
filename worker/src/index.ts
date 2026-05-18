@@ -31,6 +31,72 @@ const VIEWPORT_SIZES: Record<Viewport, { width: number; height: number }> = {
   desktop: { width: 1440, height: 900 },
 };
 
+interface NetworkSpeedResult {
+  downloadMbps: number;
+  uploadMbps: number;
+  isStable: boolean;
+  timeouts: {
+    linkCheckMs: number;
+    securityCheckMs: number;
+  };
+}
+
+async function validateNetworkSpeed(): Promise<NetworkSpeedResult> {
+  console.log("Measuring runner network speed...");
+  let downloadMbps = 0;
+  let uploadMbps = 0;
+
+  try {
+    // 1. Measure Download Speed (2.5MB public test file)
+    const dlStart = Date.now();
+    const dlRes = await fetch("https://speed.cloudflare.com/__down?bytes=2500000");
+    if (!dlRes.ok) throw new Error("Cloudflare speedtest download failed");
+    const dlBuffer = await dlRes.arrayBuffer();
+    const dlEnd = Date.now();
+    const dlDurationSec = (dlEnd - dlStart) / 1000;
+    const dlBits = dlBuffer.byteLength * 8;
+    downloadMbps = Math.round((dlBits / dlDurationSec) / 1000000 * 10) / 10;
+  } catch (err) {
+    console.warn("Failed to measure download speed, using default baseline:", err);
+    downloadMbps = 25.0; // Fallback stable speed
+  }
+
+  try {
+    // 2. Measure Upload Speed (1MB payload)
+    const ulStart = Date.now();
+    const ulPayload = new ArrayBuffer(1000000);
+    const ulRes = await fetch("https://speed.cloudflare.com/__up", {
+      method: "POST",
+      body: ulPayload
+    });
+    if (!ulRes.ok) throw new Error("Cloudflare speedtest upload failed");
+    await ulRes.arrayBuffer();
+    const ulEnd = Date.now();
+    const ulDurationSec = (ulEnd - ulStart) / 1000;
+    const ulBits = ulPayload.byteLength * 8;
+    uploadMbps = Math.round((ulBits / ulDurationSec) / 1000000 * 10) / 10;
+  } catch (err) {
+    console.warn("Failed to measure upload speed, using default baseline:", err);
+    uploadMbps = 15.0; // Fallback stable speed
+  }
+
+  console.log(`Runner Network Speed -> Download: ${downloadMbps} Mbps | Upload: ${uploadMbps} Mbps`);
+
+  // Enforce minimum requirements: 10 Mbps Down, 5 Mbps Up
+  const isStable = downloadMbps >= 10 && uploadMbps >= 5;
+
+  // 3. Adjust Timeouts based on speed:
+  // Fast connection (>=50 Mbps): Link checking 3s, Security 15s
+  // Slow connection (10-50 Mbps): Link checking 6s, Security 30s
+  const isFast = downloadMbps >= 50;
+  const timeouts = {
+    linkCheckMs: isFast ? 3000 : 6000,
+    securityCheckMs: isFast ? 15000 : 30000
+  };
+
+  return { downloadMbps, uploadMbps, isStable, timeouts };
+}
+
 async function main() {
   const testRunId = process.env.TEST_RUN_ID;
   const url = process.env.TARGET_URL;
@@ -64,7 +130,34 @@ async function main() {
   console.log(`🚀 Fargate Worker started for Test Run: ${testRunId} | URL: ${url}`);
 
   try {
-    await runTests(testRunId, url, viewports, checks, admin);
+    // ── RUN NETWORK SPEED VALIDATOR ──────────────────
+    const speedReport = await validateNetworkSpeed();
+
+    // Insert network validation result into test_results
+    await admin.from("test_results").insert({
+      test_run_id: testRunId,
+      category: "performance",
+      check_name: "Network Speed Validation",
+      status: speedReport.isStable ? "pass" : "fail",
+      severity: speedReport.isStable ? "low" : "critical",
+      message: `Runner Speed Test -> Download: ${speedReport.downloadMbps} Mbps | Upload: ${speedReport.uploadMbps} Mbps (Required: 10 Mbps Down, 5 Mbps Up)`,
+      fix_recommendation: speedReport.isStable ? "" : "Ensure the automated runner has stable high-speed internet to prevent false-negative test results.",
+      screenshot_url: null
+    });
+
+    if (!speedReport.isStable) {
+      console.error(`❌ Runner internet connection too slow/unstable (Down: ${speedReport.downloadMbps} Mbps, Up: ${speedReport.uploadMbps} Mbps). Aborting test.`);
+      await admin.from("test_runs")
+        .update({
+          status: "failed",
+          overall_score: 0,
+          completed_at: new Date().toISOString()
+        })
+        .eq("id", testRunId);
+      process.exit(1);
+    }
+
+    await runTests(testRunId, url, viewports, checks, admin, speedReport.timeouts);
     console.log("✅ Test completed successfully.");
     process.exit(0);
   } catch (err) {
@@ -79,7 +172,14 @@ async function main() {
 main();
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function runTests(testRunId: string, url: string, viewports: Viewport[], checks: RunPayload["checks"], admin: any) {
+async function runTests(
+  testRunId: string,
+  url: string,
+  viewports: Viewport[],
+  checks: RunPayload["checks"],
+  admin: any,
+  timeouts: { linkCheckMs: number; securityCheckMs: number }
+) {
   const results: TestResultInsert[] = [];
   const screenshots: Array<{ test_run_id: string; viewport: Viewport; image_url: string }> = []; // ⚡ Collect screenshots for bulk insert
 
@@ -87,7 +187,7 @@ async function runTests(testRunId: string, url: string, viewports: Viewport[], c
   if (checks.security) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+      const timeoutId = setTimeout(() => controller.abort(), timeouts.securityCheckMs);
 
       const headRes = await fetch(url, {
         method: "GET",
@@ -158,7 +258,17 @@ async function runTests(testRunId: string, url: string, viewports: Viewport[], c
 
   // ── PERFORMANCE via Lighthouse ──────────────────────
   if (checks.performance) {
+    // ⚡ CPU Cooldown: Let the CPU settle completely before running performance profiling
+    console.log("Allowing CPU and memory to settle completely before Lighthouse performance scan...");
+    await new Promise(r => setTimeout(r, 3000));
+
     for (const viewport of viewports) {
+      // Cooldown between viewports to clear previous browser execution remnants
+      if (viewports.indexOf(viewport) > 0) {
+        console.log("Allowing CPU to cool down between viewports...");
+        await new Promise(r => setTimeout(r, 3000));
+      }
+
       console.log(`Running Lighthouse performance scan for ${viewport}...`);
       let lhBrowser;
       try {
@@ -595,7 +705,7 @@ export function handleSummary(data) {
                 try {
                   // Use AbortController for timeout
                   const controller = new AbortController();
-                  const timeoutId = setTimeout(() => controller.abort(), 3000); // ⚡ Reduced from 5s to 3s timeout per link
+                  const timeoutId = setTimeout(() => controller.abort(), timeouts.linkCheckMs);
 
                   const r = await fetch(link.href, {
                     method: "HEAD",
