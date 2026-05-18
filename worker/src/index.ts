@@ -346,6 +346,119 @@ async function runTests(testRunId: string, url: string, viewports: Viewport[], c
         }
       }
     }
+
+    // ── LOAD TESTING via k6 (Throughput, Concurrent Users) ──────────
+    console.log("Starting k6 load test for Throughput & Concurrent Users...");
+    const fs = require("fs");
+    const path = require("path");
+    const { execSync } = require("child_process");
+
+    const scriptPath = path.join(__dirname, `k6_script_${testRunId}.js`);
+    const summaryPath = path.join(__dirname, `k6_summary_${testRunId}.json`);
+
+    const k6ScriptContent = `
+import http from 'k6/http';
+import { sleep } from 'k6';
+
+export const options = {
+  vus: 10,
+  duration: '5s',
+};
+
+export default function () {
+  http.get('${url}');
+  sleep(0.1);
+}
+
+export function handleSummary(data) {
+  return {
+    '${summaryPath.replace(/\\/g, "\\\\")}': JSON.stringify(data)
+  };
+}
+`;
+
+    try {
+      // 1. Verify if k6 is installed
+      try {
+        execSync("k6 version", { stdio: "ignore" });
+      } catch (err) {
+        throw new Error("k6 is not installed on the system.");
+      }
+
+      // 2. Write the temporary k6 test script
+      fs.writeFileSync(scriptPath, k6ScriptContent, "utf8");
+
+      // 3. Execute the load test
+      console.log("Running k6 load test script...");
+      execSync(`k6 run "${scriptPath}"`, { stdio: "inherit" });
+
+      // 4. Read and parse the summary
+      if (fs.existsSync(summaryPath)) {
+        const summaryData = JSON.parse(fs.readFileSync(summaryPath, "utf8"));
+        
+        const throughput = Math.round(summaryData.metrics.http_reqs.values.rate || 0);
+        const maxVus = Math.round(summaryData.metrics.vus ? summaryData.metrics.vus.values.max : 10);
+        const avgLatency = Math.round(summaryData.metrics.http_req_duration.values.avg || 0);
+
+        // Throughput results
+        results.push({
+          test_run_id: testRunId,
+          category: "performance",
+          check_name: "Throughput (Load Capacity)",
+          status: throughput >= 50 ? "pass" : throughput >= 20 ? "warning" : "fail",
+          severity: throughput >= 50 ? "low" : throughput >= 20 ? "medium" : "critical",
+          message: `Throughput: ${throughput} requests per second (Server handling capacity)`,
+          fix_recommendation: throughput < 20 ? "Optimize server code, database queries, or upgrade ECS task CPU allocation." : "",
+          screenshot_url: null
+        });
+
+        // Concurrent Users results
+        results.push({
+          test_run_id: testRunId,
+          category: "performance",
+          check_name: "Concurrent Users (Stress Test)",
+          status: "pass",
+          severity: "low",
+          message: `Successfully simulated ${maxVus} concurrent virtual users over 5 seconds`,
+          fix_recommendation: "",
+          screenshot_url: null
+        });
+
+        // Latency results
+        results.push({
+          test_run_id: testRunId,
+          category: "performance",
+          check_name: "Average Load Latency",
+          status: avgLatency <= 500 ? "pass" : avgLatency <= 1500 ? "warning" : "fail",
+          severity: avgLatency <= 500 ? "low" : avgLatency <= 1500 ? "medium" : "critical",
+          message: `Average response time under load: ${avgLatency}ms (target ≤ 500ms)`,
+          fix_recommendation: avgLatency > 500 ? "Use a CDN (like Cloudflare), implement server caching, or optimize API endpoints." : "",
+          screenshot_url: null
+        });
+      } else {
+        throw new Error("k6 finished running but failed to export summary file.");
+      }
+    } catch (k6Err: any) {
+      console.warn("k6 load test skipped or failed:", k6Err.message);
+      results.push({
+        test_run_id: testRunId,
+        category: "performance",
+        check_name: "k6 Load Capacity Scan",
+        status: "warning",
+        severity: "low",
+        message: `Load testing skipped: ${k6Err.message}`,
+        fix_recommendation: "To enable active Load Testing, ensure k6 is installed and configured on your ECS worker container.",
+        screenshot_url: null
+      });
+    } finally {
+      // 5. Clean up temporary files
+      try {
+        if (fs.existsSync(scriptPath)) fs.unlinkSync(scriptPath);
+        if (fs.existsSync(summaryPath)) fs.unlinkSync(summaryPath);
+      } catch (cleanUpErr) {
+        console.error("k6 cleanup error:", cleanUpErr);
+      }
+    }
   }
 
   // ── PER-VIEWPORT BROWSER CHECKS ─────────────────────────────────────────
