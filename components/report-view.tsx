@@ -78,8 +78,8 @@ export function ReportView({ report }: ReportViewProps) {
     // Overall Score (if available)
     if (run.overall_score !== null) {
       const scoreColor = run.overall_score >= 90 ? [22, 163, 74] :
-                        run.overall_score >= 70 ? [202, 138, 4] :
-                        run.overall_score >= 50 ? [234, 88, 12] : [220, 38, 38];
+        run.overall_score >= 70 ? [202, 138, 4] :
+          run.overall_score >= 50 ? [234, 88, 12] : [220, 38, 38];
       doc.setFillColor(scoreColor[0], scoreColor[1], scoreColor[2], 0.1);
       doc.roundedRect(margin, y, contentW, 24, 2, 2, "F");
       doc.setFontSize(9);
@@ -91,8 +91,8 @@ export function ReportView({ report }: ReportViewProps) {
       doc.setFontSize(8);
       doc.setTextColor(100, 116, 139);
       const scoreLabel = run.overall_score >= 90 ? "Excellent" :
-                        run.overall_score >= 70 ? "Good" :
-                        run.overall_score >= 50 ? "Fair" : "Poor";
+        run.overall_score >= 70 ? "Good" :
+          run.overall_score >= 50 ? "Fair" : "Poor";
       doc.text(scoreLabel, margin + 50, y + 18);
       resetColor();
       y += 30;
@@ -367,21 +367,20 @@ export function ReportView({ report }: ReportViewProps) {
               <div className="text-center md:text-left">
                 <p className="text-sm text-muted-foreground mb-1">Overall Quality Score</p>
                 <div className="flex items-baseline gap-2">
-                  <span className={`text-3xl sm:text-4xl md:text-5xl font-bold ${
-                    run.overall_score >= 90 ? "text-green-600" :
+                  <span className={`text-3xl sm:text-4xl md:text-5xl font-bold ${run.overall_score >= 90 ? "text-green-600" :
                     run.overall_score >= 70 ? "text-yellow-600" :
-                    run.overall_score >= 50 ? "text-orange-600" :
-                    "text-red-600"
-                  }`}>
+                      run.overall_score >= 50 ? "text-orange-600" :
+                        "text-red-600"
+                    }`}>
                     {run.overall_score}
                   </span>
                   <span className="text-xl sm:text-2xl text-muted-foreground">/100</span>
                 </div>
                 <p className="text-xs text-muted-foreground mt-2">
                   {run.overall_score >= 90 ? "Excellent - Production ready" :
-                   run.overall_score >= 70 ? "Good - Minor improvements needed" :
-                   run.overall_score >= 50 ? "Fair - Several issues to address" :
-                   "Poor - Critical issues require attention"}
+                    run.overall_score >= 70 ? "Good - Minor improvements needed" :
+                      run.overall_score >= 50 ? "Fair - Several issues to address" :
+                        "Poor - Critical issues require attention"}
                 </p>
               </div>
               <div className="flex-1 max-w-md">
@@ -391,13 +390,12 @@ export function ReportView({ report }: ReportViewProps) {
                     <span>{results.filter(r => r.status === "pass").length}/{results.length} checks passed</span>
                   </div>
                   <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden">
-                    <div 
-                      className={`h-full transition-all duration-500 ${
-                        run.overall_score >= 90 ? "bg-green-600" :
+                    <div
+                      className={`h-full transition-all duration-500 ${run.overall_score >= 90 ? "bg-green-600" :
                         run.overall_score >= 70 ? "bg-yellow-600" :
-                        run.overall_score >= 50 ? "bg-orange-600" :
-                        "bg-red-600"
-                      }`}
+                          run.overall_score >= 50 ? "bg-orange-600" :
+                            "bg-red-600"
+                        }`}
                       style={{ width: `${run.overall_score}%` }}
                     />
                   </div>
@@ -440,7 +438,7 @@ export function ReportView({ report }: ReportViewProps) {
                   <p className="text-lg sm:text-xl font-bold">
                     {fails > 0 ? <span className="text-red-500">{fails}</span>
                       : warns > 0 ? <span className="text-yellow-500">{warns}</span>
-                      : <span className="text-green-500">{items.length}</span>}
+                        : <span className="text-green-500">{items.length}</span>}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {fails > 0 ? `${fails} fail${fails !== 1 ? "s" : ""}` : warns > 0 ? `${warns} warn` : items.length === 0 ? "skipped" : "pass"}
@@ -597,7 +595,7 @@ function EmptyState({ label }: { label: string }) {
 function PerformanceTabContent({ results }: { results: TestResult[] }) {
   // Group performance results by viewport
   const viewports = ["Mobile", "Desktop", "Tablet"];
-  
+
   const byViewport = {
     mobile: results.filter(r => r.check_name.includes("(Mobile)")),
     desktop: results.filter(r => r.check_name.includes("(Desktop)")),
@@ -652,7 +650,7 @@ function PerformanceTabContent({ results }: { results: TestResult[] }) {
       {byViewport.other.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center gap-2 pb-2 border-b">
-            <h3 className="text-sm font-semibold text-primary">⚡ General Performance</h3>
+            <h3 className="text-sm font-semibold text-primary">Concurrent Users & Throughput</h3>
           </div>
           {byViewport.other.map((r) => <ResultCard key={r.id} result={r} />)}
         </div>
