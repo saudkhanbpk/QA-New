@@ -299,21 +299,7 @@ async function runTests(
           logLevel: "error",
           onlyCategories: ["performance", "accessibility", "best-practices", "seo"],
           formFactor: isMobile ? "mobile" : "desktop",
-          throttling: isMobile ? {
-            rttMs: 40,
-            throughputKbps: 10 * 1024,
-            cpuSlowdownMultiplier: 2,
-            requestLatencyMs: 0,
-            downloadThroughputKbps: 0,
-            uploadThroughputKbps: 0,
-          } : {
-            rttMs: 20,
-            throughputKbps: 20 * 1024,
-            cpuSlowdownMultiplier: 1,
-            requestLatencyMs: 0,
-            downloadThroughputKbps: 0,
-            uploadThroughputKbps: 0,
-          },
+          throttlingMethod: "simulate",
           screenEmulation: {
             mobile: isMobile,
             width,
