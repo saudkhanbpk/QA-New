@@ -4,6 +4,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { checkRateLimit, getRateLimitHeaders } from "@/lib/rate-limit";
 import type { Viewport } from "@/types";
 import { ECSClient, RunTaskCommand } from "@aws-sdk/client-ecs";
+import { spawn } from "child_process";
+import path from "path";
 
 interface RunPayload {
   url: string;
@@ -66,6 +68,37 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Failed to create test run: ${runError?.message || 'Unknown DB error'}` }, { status: 500 });
   }
 
+  const useLocalWorker = process.env.USE_LOCAL_WORKER === "true";
+
+  if (useLocalWorker) {
+    // ⚡ Trigger Local Worker (Useful for development and local testing)
+    try {
+      console.log(`Triggering Local Worker for test run ${testRun.id}...`);
+
+      const child = spawn("npx", ["ts-node", "src/index.ts"], {
+        cwd: path.join(process.cwd(), "worker"),
+        shell: true,
+        detached: true,
+        stdio: "ignore",
+        env: {
+          ...process.env,
+          TEST_RUN_ID: testRun.id,
+          TARGET_URL: url,
+          VIEWPORTS: JSON.stringify(viewports),
+          CHECKS: JSON.stringify(checks),
+        }
+      });
+
+      child.unref();
+      console.log(`Successfully triggered local worker process for ${testRun.id}`);
+    } catch (localError) {
+      console.error("Failed to trigger local worker:", localError);
+      await admin.from("test_runs")
+        .update({ status: "failed", completed_at: new Date().toISOString() })
+        .eq("id", testRun.id);
+      return NextResponse.json({ error: "Failed to start local worker process", localError }, { status: 500 });
+    }
+  } else {
     // ⚡ Offload to AWS Fargate (Massive Scaling)
     try {
       console.log(`Triggering ECS Fargate task for test run ${testRun.id}...`);
@@ -129,6 +162,7 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({ error: "Failed to start Fargate worker", awsError }, { status: 500 });
     }
+  }
 
   return NextResponse.json({ testRunId: testRun.id });
 }
