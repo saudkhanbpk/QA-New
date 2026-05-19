@@ -415,12 +415,20 @@ async function runTests(
           });
 
           // TTFB
+          const ttfbTarget = isMobile ? 700 : 600;
+          const ttfbStatus = ttfb <= ttfbTarget ? "pass" : ttfb <= 1800 ? "warning" : "fail";
+          const ttfbSeverity = ttfb <= ttfbTarget ? "low" : ttfb <= 1800 ? "medium" : "critical";
           results.push({
-            test_run_id: testRunId, category: "performance", check_name: `Time to First Byte (${vName})`,
-            status: ttfb <= 600 ? "pass" : ttfb <= 1800 ? "warning" : "fail",
-            severity: ttfb <= 600 ? "low" : ttfb <= 1800 ? "medium" : "critical",
-            message: `TTFB: ${ttfb}ms (${vName}, target ≤ 600ms)`,
-            fix_recommendation: ttfb > 600 ? getFixRecommendation("ttfb_slow") : "", screenshot_url: null
+            test_run_id: testRunId,
+            category: "performance",
+            check_name: `Time to First Byte - Server Response Time (${vName})`,
+            status: ttfbStatus,
+            severity: ttfbSeverity,
+            message: `TTFB: ${ttfb}ms (${vName}, target ≤ ${ttfbTarget}ms)${ttfbStatus !== 'pass' ? ' — Your hosting server is running slow, likely due to high traffic spikes or temporary resource restrictions.' : ''}`,
+            fix_recommendation: ttfbStatus !== "pass" 
+              ? "Optimize your hosting server by upgrading your CPU/RAM allocation, setting up database caching, or moving your static assets to a CDN."
+              : "",
+            screenshot_url: null
           });
 
           // CLS
@@ -433,12 +441,20 @@ async function runTests(
           });
 
           // TBT
+          const tbtTarget = isMobile ? 300 : 200;
+          const tbtStatus = tbt <= tbtTarget ? "pass" : tbt <= 600 ? "warning" : "fail";
+          const tbtSeverity = tbt <= tbtTarget ? "low" : tbt <= 600 ? "medium" : "critical";
           results.push({
-            test_run_id: testRunId, category: "performance", check_name: `Total Blocking Time (${vName})`,
-            status: tbt <= 200 ? "pass" : tbt <= 600 ? "warning" : "fail",
-            severity: tbt <= 200 ? "low" : tbt <= 600 ? "medium" : "critical",
-            message: `TBT: ${tbt}ms (${vName}, target ≤ 200ms)`,
-            fix_recommendation: tbt > 200 ? getFixRecommendation("tbt_high") : "", screenshot_url: null
+            test_run_id: testRunId,
+            category: "performance",
+            check_name: `Page Smoothness - Phone Processing Load (${vName})`,
+            status: tbtStatus,
+            severity: tbtSeverity,
+            message: `TBT: ${tbt}ms (${vName}, target ≤ ${tbtTarget}ms)${tbtStatus !== 'pass' ? ' — The website has too many complex functions or animations, causing a visitor\'s device to lag while loading the page.' : ''}`,
+            fix_recommendation: tbtStatus !== "pass"
+              ? "Simplify the website by reducing complex visual elements, removing heavy interactive features, and cleaning up background tracking services."
+              : "",
+            screenshot_url: null
           });
 
           // Speed Index
