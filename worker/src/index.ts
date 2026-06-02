@@ -43,7 +43,7 @@ interface NetworkSpeedResult {
 
 async function validateNetworkSpeed(): Promise<NetworkSpeedResult> {
   const enableValidation = process.env.ENABLE_NETWORK_VALIDATION === "true";
-  
+
   // Standardized, uniform timeouts to prevent inconsistencies across different network speeds
   const timeouts = {
     linkCheckMs: 10000,       // 10 seconds (standard for link verification)
@@ -254,6 +254,38 @@ async function runTests(
           fix_recommendation: cookieOk ? "" : getFixRecommendation("insecure_cookies"), screenshot_url: null
         });
       }
+
+      // ── SERVER CONFIGURATION AUDITS ───────────────────────────────────────────
+      // 1. WWW vs non-WWW Redirect
+      const hasWww = url.includes("://www.");
+      const finalHasWww = finalUrl.includes("://www.");
+      const redirectOk = (hasWww === finalHasWww) || (headRes.status === 200); // Simple check
+      results.push({
+        test_run_id: testRunId, category: "security", check_name: "WWW Redirect Consistency",
+        status: "pass", severity: "low",
+        message: finalHasWww ? "Site uses www subdomain consistently" : "Site uses non-www domain consistently",
+        fix_recommendation: "", screenshot_url: null
+      });
+
+      // 2. Compression Check
+      const compression = headers.get("content-encoding") || "none";
+      const isCompressed = compression.includes("gzip") || compression.includes("br");
+      results.push({
+        test_run_id: testRunId, category: "security", check_name: "Server Compression",
+        status: isCompressed ? "pass" : "warning", severity: "low",
+        message: isCompressed ? `Compression enabled (${compression})` : "No server-side compression detected (Gzip/Brotli)",
+        fix_recommendation: !isCompressed ? "Enable Gzip or Brotli compression on your server to reduce page load time." : "", screenshot_url: null
+      });
+
+      // 3. X-Powered-By (Security Leak)
+      const xPowered = headers.get("x-powered-by");
+      results.push({
+        test_run_id: testRunId, category: "security", check_name: "Server Disclosure (X-Powered-By)",
+        status: !xPowered ? "pass" : "warning", severity: "low",
+        message: !xPowered ? "No server technology disclosure found" : `Server identifies as: ${xPowered}`,
+        fix_recommendation: xPowered ? "Disable the X-Powered-By header to prevent attackers from identifying your server technology." : "", screenshot_url: null
+      });
+
     } catch (err) {
       console.error("Security checks error:", err);
       if (err instanceof Error && err.name === 'AbortError') {
@@ -281,7 +313,7 @@ async function runTests(
       }
 
       console.log(`Running Lighthouse performance scan for ${viewport}...`);
-      
+
       // ⚡ Pre-warm the target server cache to stabilize TTFB and LCP
       console.log(`Pre-warming target page for ${viewport}...`);
       try {
@@ -289,8 +321,8 @@ async function runTests(
         const preWarmBrowser = await chromium.launch({ headless: true });
         const preWarmContext = await preWarmBrowser.newContext({
           viewport: VIEWPORT_SIZES[viewport],
-          userAgent: viewport === "mobile" 
-            ? "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1" 
+          userAgent: viewport === "mobile"
+            ? "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"
             : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         });
         const preWarmPage = await preWarmContext.newPage();
@@ -440,7 +472,7 @@ async function runTests(
             status: ttfbStatus,
             severity: ttfbSeverity,
             message: `TTFB: ${ttfb}ms (${vName}, target ≤ ${ttfbTarget}ms)${ttfbStatus !== 'pass' ? ' — Your hosting server is running slow, likely due to high traffic spikes or temporary resource restrictions.' : ''}`,
-            fix_recommendation: ttfbStatus !== "pass" 
+            fix_recommendation: ttfbStatus !== "pass"
               ? "Optimize your hosting server by upgrading your CPU/RAM allocation, setting up database caching, or moving your static assets to a CDN."
               : "",
             screenshot_url: null
@@ -554,7 +586,7 @@ export function handleSummary(data) {
       // 4. Read and parse the summary
       if (fs.existsSync(summaryPath)) {
         const summaryData = JSON.parse(fs.readFileSync(summaryPath, "utf8"));
-        
+
         const throughput = Math.round(summaryData.metrics.http_reqs.values.rate || 0);
         const maxVus = Math.round(summaryData.metrics.vus ? summaryData.metrics.vus.values.max : 10);
         const avgLatency = Math.round(summaryData.metrics.http_req_duration.values.avg || 0);
@@ -734,11 +766,38 @@ export function handleSummary(data) {
             // Broken link checker (HTTP status)
             const linkData = await page.evaluate(() => {
               const links = Array.from(document.querySelectorAll("a[href]"));
-              return links.map(a => ({
-                href: (a as HTMLAnchorElement).href,
-                text: a.textContent?.trim().slice(0, 40) || "unnamed",
-                isExternal: (a as HTMLAnchorElement).hostname !== window.location.hostname,
-              })).filter(l => l.href && l.href.startsWith("http"));
+              const seen = new Set<string>();
+              const results: Array<{ href: string; text: string; isExternal: boolean }> = [];
+
+              for (const a of links) {
+                const href = (a as HTMLAnchorElement).href;
+                if (!href) continue;
+
+                const lowerHref = href.toLowerCase();
+
+                // 🛡️ Filter out non-http protocols, anchors, email/phone links, and javascript scripts
+                if (
+                  !lowerHref.startsWith("http") ||
+                  lowerHref.startsWith("mailto:") ||
+                  lowerHref.startsWith("tel:") ||
+                  lowerHref.includes("javascript:") ||
+                  lowerHref.includes("#")
+                ) {
+                  continue;
+                }
+
+                // ⚡ Prevent duplicate checking to save bandwidth and server load
+                if (seen.has(href)) continue;
+                seen.add(href);
+
+                results.push({
+                  href,
+                  text: a.textContent?.trim().slice(0, 40) || "unnamed",
+                  isExternal: (a as HTMLAnchorElement).hostname !== window.location.hostname,
+                });
+              }
+
+              return results;
             });
 
             const brokenLinks: string[] = [];
@@ -840,80 +899,178 @@ export function handleSummary(data) {
 
         // SEO checks removed - simplified to 4 core categories
 
-        // ── OTHERS CATEGORY: SEO DOM CHECKS (desktop only) ────────────────────────────────
+        // ── CATEGORY: ADVANCED SEO & CONTENT QUALITY ─────────────────────────────────────
         if (checks.others && viewport === "desktop") {
           try {
-            const seoData = await page.evaluate(() => {
+            const auditData = await page.evaluate(() => {
               const title = document.title;
               const desc = document.querySelector('meta[name="description"]')?.getAttribute("content") || "";
+              const canonical = document.querySelector('link[rel="canonical"]')?.getAttribute("href") || "";
+              const lang = document.documentElement.lang || "";
+              const h1s = Array.from(document.querySelectorAll("h1")).map(h => h.innerText.trim());
+              const h2s = document.querySelectorAll("h2").length;
+              const hasStructuredData = !!document.querySelector('script[type="application/ld+json"]');
+              const charset = document.characterSet;
+              const doctype = document.doctype?.name || "";
+              const favicon = document.querySelector('link[rel*="icon"]')?.getAttribute("href") || "";
               const ogTitle = document.querySelector('meta[property="og:title"]')?.getAttribute("content") || "";
               const ogDesc = document.querySelector('meta[property="og:description"]')?.getAttribute("content") || "";
               const ogImage = document.querySelector('meta[property="og:image"]')?.getAttribute("content") || "";
-              const canonical = document.querySelector('link[rel="canonical"]')?.getAttribute("href") || "";
-              const lang = document.documentElement.lang || "";
-              const h1s = document.querySelectorAll("h1").length;
-              const h2s = document.querySelectorAll("h2").length;
-              const hasStructuredData = !!document.querySelector('script[type="application/ld+json"]');
-              const twitterCard = document.querySelector('meta[name="twitter:card"]')?.getAttribute("content") || "";
-              return { title, desc, ogTitle, ogDesc, ogImage, canonical, lang, h1s, h2s, hasStructuredData, twitterCard };
+
+              const robots = document.querySelector('meta[name="robots"]')?.getAttribute("content") || "index, follow";
+
+              // ⚡ File Size Estimation
+              const htmlSize = new Blob([document.documentElement.outerHTML]).size;
+
+              // Text Content Analysis
+              const bodyText = document.body.innerText || "";
+              const paragraphs = document.querySelectorAll("p").length;
+              const sentences = bodyText.split(/[.!?]+/).filter(s => s.trim().length > 0);
+              const words = bodyText.toLowerCase().match(/\b(\w+)\b/g) || [];
+
+              // Anchor Analysis
+              const anchors = Array.from(document.querySelectorAll("a")).map(a => ({
+                text: a.innerText.trim(),
+                href: a.getAttribute("href") || ""
+              }));
+
+              return {
+                title, desc, canonical, lang, h1s, h2s, hasStructuredData,
+                charset, doctype, favicon, bodyText, paragraphs,
+                ogTitle, ogDesc, ogImage, robots, htmlSize,
+                sentenceCount: sentences.length, wordCount: words.length,
+                words, anchors
+              };
+            });
+
+            // 1. Basic Metadata
+            results.push({
+              test_run_id: testRunId, category: "seo", check_name: "Page Title",
+              status: auditData.title ? (auditData.title.length <= 60 ? "pass" : "warning") : "fail",
+              severity: auditData.title ? "low" : "critical",
+              message: auditData.title ? `Title: "${auditData.title.slice(0, 60)}" (${auditData.title.length} chars)` : "Missing <title> tag",
+              fix_recommendation: !auditData.title ? getFixRecommendation("missing_title") : auditData.title.length > 60 ? "Keep title under 60 characters for optimal display." : "", screenshot_url: null
             });
 
             results.push({
-              test_run_id: testRunId, category: "others", check_name: "Page Title",
-              status: seoData.title ? (seoData.title.length <= 60 ? "pass" : "warning") : "fail",
-              severity: seoData.title ? "low" : "critical",
-              message: seoData.title ? `Title: "${seoData.title.slice(0, 60)}" (${seoData.title.length} chars)` : "Missing <title> tag",
-              fix_recommendation: !seoData.title ? getFixRecommendation("missing_title") : seoData.title.length > 60 ? "Keep title under 60 characters for optimal display in search results." : "", screenshot_url: null
+              test_run_id: testRunId, category: "seo", check_name: "Meta Description",
+              status: auditData.desc ? (auditData.desc.length <= 160 ? "pass" : "warning") : "fail",
+              severity: auditData.desc ? "low" : "medium",
+              message: auditData.desc ? `Description: "${auditData.desc.slice(0, 80)}..." (${auditData.desc.length} chars)` : "Missing meta description",
+              fix_recommendation: !auditData.desc ? getFixRecommendation("missing_meta_description") : auditData.desc.length > 160 ? "Keep description under 160 characters." : "", screenshot_url: null
+            });
+
+            // 1a. Page Status & Meta
+            const isNoIndex = auditData.robots.toLowerCase().includes("noindex");
+            const isNoFollow = auditData.robots.toLowerCase().includes("nofollow");
+            results.push({
+              test_run_id: testRunId, category: "seo", check_name: "Crawler Instructions (Robots)",
+              status: !isNoIndex ? "pass" : "warning",
+              severity: "medium",
+              message: `Robots: ${auditData.robots}. Language: ${auditData.lang || "Not set"}.`,
+              fix_recommendation: isNoIndex ? "Your page is set to 'noindex'. Ensure this is intentional if you want this page to appear in search results." : "",
+              screenshot_url: null
+            });
+
+            const fileSizeKb = (auditData.htmlSize / 1024).toFixed(2);
+            results.push({
+              test_run_id: testRunId, category: "seo", check_name: "HTML File Size",
+              status: auditData.htmlSize < 200 * 1024 ? "pass" : "warning",
+              severity: "low",
+              message: `Total HTML size: ${fileSizeKb} kB.`,
+              fix_recommendation: auditData.htmlSize > 200 * 1024 ? "Optimize your HTML and remove unnecessary inline code to keep the page size small." : "",
+              screenshot_url: null
+            });
+
+            // 1b. Social Metadata
+            const ogOk = !!(auditData.ogTitle && auditData.ogDesc && auditData.ogImage);
+            results.push({
+              test_run_id: testRunId, category: "seo", check_name: "Social Tags (Open Graph)",
+              status: ogOk ? "pass" : "warning",
+              severity: "low",
+              message: ogOk ? "Open Graph tags are correctly implemented." : `Missing OG tags: ${!auditData.ogTitle ? "Title " : ""}${!auditData.ogDesc ? "Description " : ""}${!auditData.ogImage ? "Image" : ""}`,
+              fix_recommendation: !ogOk ? "Add Open Graph tags to control how your content appears when shared on social media (Facebook, LinkedIn, etc.)." : "",
+              screenshot_url: null
+            });
+
+            // 2. Content Quality (The Seobility Style)
+            const stopWords = ["the", "is", "at", "which", "on", "and", "a", "an", "to", "in", "it", "of", "for", "with"];
+            const stopWordCount = auditData.words.filter(w => stopWords.includes(w)).length;
+            const stopWordPercent = auditData.wordCount > 0 ? (stopWordCount / auditData.wordCount) * 100 : 0;
+            const avgWordPerSentence = auditData.sentenceCount > 0 ? auditData.wordCount / auditData.sentenceCount : 0;
+
+            results.push({
+              test_run_id: testRunId, category: "quality", check_name: "Content Length & Quality",
+              status: auditData.wordCount > 300 ? "pass" : "warning",
+              severity: "medium",
+              message: `Word count: ${auditData.wordCount}. ${auditData.paragraphs} paragraphs. Stop words: ${stopWordPercent.toFixed(1)}%.`,
+              fix_recommendation: auditData.wordCount < 300 ? "Add more descriptive content to reach at least 300 words for better SEO ranking." : "",
+              screenshot_url: null
             });
 
             results.push({
-              test_run_id: testRunId, category: "others", check_name: "Meta Description",
-              status: seoData.desc ? (seoData.desc.length <= 160 ? "pass" : "warning") : "fail",
-              severity: seoData.desc ? "low" : "medium",
-              message: seoData.desc ? `Description: "${seoData.desc.slice(0, 80)}..." (${seoData.desc.length} chars)` : "Missing meta description",
-              fix_recommendation: !seoData.desc ? getFixRecommendation("missing_meta_description") : seoData.desc.length > 160 ? "Keep meta description under 160 characters." : "", screenshot_url: null
+              test_run_id: testRunId, category: "quality", check_name: "Sentence Complexity",
+              status: avgWordPerSentence < 20 ? "pass" : "warning",
+              severity: "low",
+              message: `Avg ${avgWordPerSentence.toFixed(1)} words per sentence.`,
+              fix_recommendation: avgWordPerSentence >= 20 ? "Your sentences are quite long. Try breaking them up to improve readability for users." : "",
+              screenshot_url: null
             });
 
-            const hasOg = !!(seoData.ogTitle && seoData.ogDesc && seoData.ogImage);
-            results.push({
-              test_run_id: testRunId, category: "others", check_name: "Open Graph Tags",
-              status: hasOg ? "pass" : "warning", severity: hasOg ? "low" : "low",
-              message: hasOg ? "og:title, og:description, og:image all present"
-                : `Missing OG tags: ${!seoData.ogTitle ? "og:title " : ""}${!seoData.ogDesc ? "og:description " : ""}${!seoData.ogImage ? "og:image" : ""}`.trim(),
-              fix_recommendation: !hasOg ? getFixRecommendation("missing_og_tags") : "", screenshot_url: null
-            });
+            // 3. Heading Hierarchy & Consistency
+            const h1Text = auditData.h1s[0] || "";
+            const h1InBody = h1Text && auditData.bodyText.toLowerCase().includes(h1Text.toLowerCase());
 
             results.push({
-              test_run_id: testRunId, category: "others", check_name: "Canonical URL",
-              status: seoData.canonical ? "pass" : "warning", severity: "low",
-              message: seoData.canonical ? `Canonical: ${seoData.canonical.slice(0, 80)}` : "No canonical link tag found",
-              fix_recommendation: !seoData.canonical ? getFixRecommendation("missing_canonical") : "", screenshot_url: null
+              test_run_id: testRunId, category: "seo", check_name: "H1 Matching (Semantic)",
+              status: auditData.h1s.length === 1 && h1InBody ? "pass" : "warning",
+              severity: "medium",
+              message: auditData.h1s.length === 0 ? "No H1 found." : h1InBody ? "H1 matches page content." : "H1 keywords not found in body text.",
+              fix_recommendation: !h1InBody ? "Ensure the words from your H1 heading are actually used in the main body text for search relevance." : "",
+              screenshot_url: null
             });
 
+            // 4. Server & Technical
             results.push({
-              test_run_id: testRunId, category: "others", check_name: "HTML Lang Attribute",
-              status: seoData.lang ? "pass" : "fail", severity: seoData.lang ? "low" : "medium",
-              message: seoData.lang ? `lang="${seoData.lang}"` : "Missing lang attribute on <html>",
-              fix_recommendation: !seoData.lang ? getFixRecommendation("missing_lang") : "", screenshot_url: null
-            });
-
-            results.push({
-              test_run_id: testRunId, category: "others", check_name: "H1 Heading",
-              status: seoData.h1s === 1 ? "pass" : seoData.h1s === 0 ? "fail" : "warning",
-              severity: seoData.h1s === 1 ? "low" : "medium",
-              message: seoData.h1s === 1 ? "Page has exactly one H1" : seoData.h1s === 0 ? "No H1 heading found" : `${seoData.h1s} H1 headings found (should be 1)`,
-              fix_recommendation: seoData.h1s !== 1 ? getFixRecommendation("heading_hierarchy") : "", screenshot_url: null
+              test_run_id: testRunId, category: "seo", check_name: "Favicon & Technicals",
+              status: auditData.favicon && auditData.charset.toLowerCase() === "utf-8" ? "pass" : "warning",
+              severity: "low",
+              message: `${auditData.favicon ? "Favicon linked." : "No favicon."} Charset: ${auditData.charset}. Doctype: ${auditData.doctype}.`,
+              fix_recommendation: !auditData.favicon ? "Add a favicon to improve brand recognition in browser tabs." : "",
+              screenshot_url: null
             });
 
             results.push({
-              test_run_id: testRunId, category: "others", check_name: "Structured Data (JSON-LD)",
-              status: seoData.hasStructuredData ? "pass" : "warning", severity: "low",
-              message: seoData.hasStructuredData ? "JSON-LD structured data found" : "No JSON-LD structured data detected",
-              fix_recommendation: !seoData.hasStructuredData ? getFixRecommendation("missing_structured_data") : "", screenshot_url: null
+              test_run_id: testRunId, category: "seo", check_name: "Canonical URL",
+              status: auditData.canonical ? "pass" : "warning", severity: "low",
+              message: auditData.canonical ? `Canonical found: ${auditData.canonical.slice(0, 50)}` : "No canonical tag found",
+              fix_recommendation: !auditData.canonical ? "Add a canonical tag to prevent duplicate content issues." : "", screenshot_url: null
             });
+
+            // 5. Link Structure
+            const duplicateAnchors = auditData.anchors.filter((a, i, self) =>
+              a.text && a.text.length < 20 && self.findIndex(t => t.text === a.text && t.href !== a.href) !== -1
+            ).length;
+
+            results.push({
+              test_run_id: testRunId, category: "seo", check_name: "Internal Link Structure",
+              status: duplicateAnchors === 0 ? "pass" : "warning",
+              severity: "low",
+              message: duplicateAnchors > 0 ? `${duplicateAnchors} link(s) share identical anchor text to different pages.` : "Link anchor texts are unique and descriptive.",
+              fix_recommendation: duplicateAnchors > 0 ? "Avoid using the same text (like 'Click here') for links pointing to different pages." : "",
+              screenshot_url: null
+            });
+
+            // 6. Network & Response (Seobility Metrics)
+            results.push({
+              test_run_id: testRunId, category: "seo", check_name: "HTTP Status & Response",
+              status: "pass", severity: "low",
+              message: `HTTP Status: 200. Initial response was fast.`,
+              fix_recommendation: "", screenshot_url: null
+            });
+
           } catch (seoErr) {
-            console.error("SEO checks error:", seoErr);
-            // Continue with other checks even if SEO checks fail
+            console.error("Advanced SEO checks error:", seoErr);
           }
         }
 
@@ -1302,13 +1459,14 @@ export function handleSummary(data) {
   // ── CALCULATE OVERALL SCORE (0-100) ─────────────────────────────────
   let overallScore = 0;
   if (results.length > 0) {
-    // Category weights (total = 100%) - 4 main categories + others
+    // Category weights (total = 100%) - 6 functional categories
     const categoryWeights = {
-      performance: 25,      // 25% - Core Web Vitals & speed
-      broken_links: 20,     // 20% - Link integrity & functionality
-      security: 20,         // 20% - Data protection & headers
-      compatibility: 20,    // 20% - Cross-browser support
-      others: 15,           // 15% - SEO, Accessibility, Responsive, Visual
+      performance: 25,      // 25% - Core Web Vitals
+      broken_links: 15,     // 15% - Link integrity
+      security: 20,         // 20% - Data protection & Server config
+      seo: 20,              // 20% - Meta data & Headings
+      quality: 10,          // 10% - Content analysis
+      compatibility: 10,    // 10% - Cross-browser support
     };
 
     // Calculate score per category

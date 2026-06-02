@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { CheckCircle2, XCircle, AlertTriangle, Download, Globe, Clock, Monitor, Smartphone, Tablet, Wrench, RefreshCw } from "lucide-react";
-import type { TestReport, TestResult, Severity, ResultStatus } from "@/types";
+import { CheckCircle2, XCircle, AlertTriangle, Download, Globe, Clock, Monitor, Smartphone, Tablet, Wrench, RefreshCw, ListTodo, FileSearch, HelpCircle } from "lucide-react";
+import type { TestReport, TestResult, Severity, ResultStatus, Category } from "@/types";
 
 interface ReportViewProps { report: TestReport; }
 
@@ -18,13 +18,24 @@ export function ReportView({ report }: ReportViewProps) {
   const totalWarnings = results.filter((r) => r.status === "warning").length;
   const overallPass = totalFails === 0;
 
-  const byCategory = {
+  const byCategory: Record<Category, TestResult[]> = {
     performance: results.filter((r) => r.category === "performance"),
     broken_links: results.filter((r) => r.category === "broken_links"),
     compatibility: results.filter((r) => r.category === "compatibility"),
     security: results.filter((r) => r.category === "security"),
+    seo: results.filter((r) => r.category === "seo"),
+    quality: results.filter((r) => r.category === "quality"),
     others: results.filter((r) => r.category === "others"),
   };
+
+  const priorityFixes = results
+    .filter(r => r.status !== "pass" && (r.severity === "critical" || r.severity === "medium"))
+    .sort((a, b) => {
+      if (a.severity === "critical" && b.severity !== "critical") return -1;
+      if (a.severity !== "critical" && b.severity === "critical") return 1;
+      return 0;
+    })
+    .slice(0, 5);
 
   async function downloadPDF() {
     const { jsPDF } = await import("jspdf");
@@ -143,6 +154,8 @@ export function ReportView({ report }: ReportViewProps) {
       { key: "broken_links", label: "Broken Links" },
       { key: "compatibility", label: "Cross-Browser" },
       { key: "security", label: "Security" },
+      { key: "seo", label: "SEO" },
+      { key: "quality", label: "Page Quality" },
       { key: "others", label: "Others" },
     ] as const;
 
@@ -274,6 +287,8 @@ export function ReportView({ report }: ReportViewProps) {
     { key: "broken_links", label: "Links" },
     { key: "compatibility", label: "Browser" },
     { key: "security", label: "Security" },
+    { key: "seo", label: "SEO" },
+    { key: "quality", label: "Quality" },
     { key: "others", label: "Others" },
   ] as const;
 
@@ -359,6 +374,43 @@ export function ReportView({ report }: ReportViewProps) {
         </div>
       </div>
 
+      {/* Priority Fixes (To-Do List) */}
+      {priorityFixes.length > 0 && (
+        <Card className="border-amber-200 bg-amber-50/30 dark:border-amber-900/50 dark:bg-amber-900/10">
+          <CardHeader className="py-3 px-4 flex flex-row items-center gap-2 border-b border-amber-100 dark:border-amber-900/30">
+            <ListTodo className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+            <CardTitle className="text-sm font-semibold text-amber-900 dark:text-amber-100 uppercase tracking-wider">
+              Priority Fixes (To-Do List)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-4">
+            <div className="space-y-3">
+              {priorityFixes.map((fix, idx) => (
+                <div key={fix.id} className="flex gap-3 items-start group">
+                  <div className="mt-0.5 shrink-0 flex items-center justify-center h-5 w-5 rounded-full bg-amber-100 dark:bg-amber-900/50 text-[10px] font-bold text-amber-700 dark:text-amber-300">
+                    {idx + 1}
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-amber-900 dark:text-amber-100 flex items-center gap-2">
+                      {fix.check_name}
+                      <SeverityBadge severity={fix.severity} />
+                    </p>
+                    <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
+                      {fix.message}
+                    </p>
+                    {fix.fix_recommendation && (
+                      <p className="text-[11px] text-amber-600 dark:text-amber-500 italic">
+                        Tip: {fix.fix_recommendation}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Overall Score Card */}
       {run.status === "completed" && run.overall_score !== null && (
         <Card className="border-2">
@@ -422,33 +474,36 @@ export function ReportView({ report }: ReportViewProps) {
             </div>
           </CardContent>
         </Card>
-      )}
+      )
+      }
 
       {/* Summary grid */}
-      {run.status === "completed" && (
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-          {SUMMARY_CATS.map(({ key, label }) => {
-            const items = byCategory[key];
-            const fails = items.filter((r) => r.status === "fail").length;
-            const warns = items.filter((r) => r.status === "warning").length;
-            return (
-              <Card key={key} className="text-center">
-                <CardContent className="pt-3 pb-2 px-2">
-                  <p className="text-xs text-muted-foreground mb-1">{label}</p>
-                  <p className="text-lg sm:text-xl font-bold">
-                    {fails > 0 ? <span className="text-red-500">{fails}</span>
-                      : warns > 0 ? <span className="text-yellow-500">{warns}</span>
-                        : <span className="text-green-500">{items.length}</span>}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {fails > 0 ? `${fails} fail${fails !== 1 ? "s" : ""}` : warns > 0 ? `${warns} warn` : items.length === 0 ? "skipped" : "pass"}
-                  </p>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      )}
+      {
+        run.status === "completed" && (
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+            {SUMMARY_CATS.map(({ key, label }) => {
+              const items = byCategory[key];
+              const fails = items.filter((r) => r.status === "fail").length;
+              const warns = items.filter((r) => r.status === "warning").length;
+              return (
+                <Card key={key} className="text-center">
+                  <CardContent className="pt-3 pb-2 px-2">
+                    <p className="text-xs text-muted-foreground mb-1">{label}</p>
+                    <p className="text-lg sm:text-xl font-bold">
+                      {fails > 0 ? <span className="text-red-500">{fails}</span>
+                        : warns > 0 ? <span className="text-yellow-500">{warns}</span>
+                          : <span className="text-green-500">{items.length}</span>}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {fails > 0 ? `${fails} fail${fails !== 1 ? "s" : ""}` : warns > 0 ? `${warns} warn` : items.length === 0 ? "skipped" : "pass"}
+                    </p>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )
+      }
 
       {/* Tabs — 5 categories */}
       <Tabs defaultValue="performance">
@@ -493,7 +548,7 @@ export function ReportView({ report }: ReportViewProps) {
           )}
         </TabsContent>
       </Tabs>
-    </div>
+    </div >
   );
 }
 
@@ -679,10 +734,10 @@ function OthersTabContent({ results }: { results: TestResult[] }) {
   };
 
   const bySubCategory = {
-    seo: results.filter(r => categorizeResult(r) === "seo"),
-    accessibility: results.filter(r => categorizeResult(r) === "accessibility"),
-    responsive: results.filter(r => categorizeResult(r) === "responsive"),
-    visual: results.filter(r => categorizeResult(r) === "visual"),
+    seo: results.filter(r => r.category === "seo"),
+    quality: results.filter(r => r.category === "quality"),
+    accessibility: results.filter(r => r.category === "others" && !r.check_name.includes("Screenshot")),
+    visual: results.filter(r => r.category === "others" && r.check_name.includes("Screenshot")),
   };
 
   return (
@@ -691,12 +746,29 @@ function OthersTabContent({ results }: { results: TestResult[] }) {
       {bySubCategory.seo.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center gap-2 pb-2 border-b">
-            <h3 className="text-sm font-semibold text-primary">📊 SEO Checks</h3>
+            <h3 className="text-sm font-semibold text-primary flex items-center gap-2">
+              <FileSearch className="h-4 w-4" /> SEO & Meta Data
+            </h3>
             <span className="text-xs text-muted-foreground">
               ({bySubCategory.seo.filter(r => r.status === "pass").length}/{bySubCategory.seo.length} passed)
             </span>
           </div>
           {bySubCategory.seo.map((r) => <ResultCard key={r.id} result={r} />)}
+        </div>
+      )}
+
+      {/* Page Quality Section */}
+      {bySubCategory.quality.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 pb-2 border-b">
+            <h3 className="text-sm font-semibold text-primary flex items-center gap-2">
+              <RefreshCw className="h-4 w-4" /> Page Quality & Content
+            </h3>
+            <span className="text-xs text-muted-foreground">
+              ({bySubCategory.quality.filter(r => r.status === "pass").length}/{bySubCategory.quality.length} passed)
+            </span>
+          </div>
+          {bySubCategory.quality.map((r) => <ResultCard key={r.id} result={r} />)}
         </div>
       )}
 

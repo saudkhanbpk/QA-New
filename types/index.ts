@@ -6,6 +6,8 @@ export type Category =
   | "broken_links"
   | "compatibility"
   | "security"
+  | "seo"
+  | "quality"
   | "others";
 export type Viewport = "mobile" | "tablet" | "desktop";
 export type Browser = "chromium" | "firefox" | "webkit";
