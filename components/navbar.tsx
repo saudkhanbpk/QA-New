@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Bug, LogOut, LayoutDashboard, Plus, Shield } from "lucide-react";
+import navbarbg from "@/components/ui/navbarbg.jpg";
 
 interface NavbarProps {
   userEmail?: string | null;
@@ -22,12 +23,20 @@ export function Navbar({ userEmail, isAdmin }: NavbarProps) {
   }
 
   return (
-    <nav className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-14 items-center justify-between px-4">
+    <nav
+      className="backdrop-blur border-b"
+      style={{
+        backgroundImage: `url(${navbarbg.src})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat'
+      }}
+    >
+      <div className="container  flex h-14 md:h-20 items-center justify-between">
         <Link href="/" className="flex items-center gap-2 font-semibold shrink-0">
-          <Bug className="h-5 w-5 text-primary" />
-          <span className="hidden sm:inline">QA Tester</span>
-          <span className="sm:hidden">QA</span>
+          <Bug className="h-5 w-5 text-[#3388cc]" />
+          <span className="hidden sm:inline md:text-2xl text-[#3388cc]">QA Tester</span>
+          <span className="sm:hidden text-[#3388cc]">QA</span>
         </Link>
 
         <div className="flex items-center gap-1 sm:gap-2">
@@ -61,10 +70,10 @@ export function Navbar({ userEmail, isAdmin }: NavbarProps) {
           ) : (
             <>
               <Link href="/login">
-                <Button variant="ghost" size="sm">Sign in</Button>
+                <Button variant="ghost" size="sm" className="text-white">Sign in</Button>
               </Link>
               <Link href="/register">
-                <Button size="sm">Get started</Button>
+                <Button size="sm" className="bg-[#3388cc]">Get started</Button>
               </Link>
             </>
           )}

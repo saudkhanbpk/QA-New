@@ -24,10 +24,11 @@ interface RunPayload {
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // ⚡ Rate limiting: increased for batch testing
-  const rateLimitResult = checkRateLimit(`user:${user.id}`, { maxRequests: 10000, windowMs: 60 * 60 * 1000 });
+  // ⚡ Rate limiting: use user ID if logged in, otherwise use IP
+  const rateLimitKey = user ? `user:${user.id}` : `ip:${request.headers.get("x-forwarded-for") || "anonymous"}`;
+  const rateLimitResult = checkRateLimit(rateLimitKey, { maxRequests: 10000, windowMs: 60 * 60 * 1000 });
+
   if (!rateLimitResult.allowed) {
     const resetDate = new Date(rateLimitResult.resetAt);
     return NextResponse.json(
@@ -55,7 +56,7 @@ export async function POST(request: NextRequest) {
   const { data: testRun, error: runError } = await admin
     .from("test_runs")
     .insert({
-      user_id: user.id,
+      user_id: user?.id || null,
       page_url: url,
       status: "running",
       batch_id: batchId || null,
@@ -144,14 +145,14 @@ export async function POST(request: NextRequest) {
       console.log(`Successfully triggered ECS task for ${testRun.id}`);
     } catch (awsError) {
       console.error("ECS error:", awsError);
-      
+
       // ⚡ SAFETY CHECK
       const { data: currentTest } = await admin
         .from("test_runs")
         .select("status")
         .eq("id", testRun.id)
         .single();
-        
+
       if (currentTest?.status === 'running' || currentTest?.status === 'completed') {
         return NextResponse.json({ testRunId: testRun.id, status: currentTest.status });
       }

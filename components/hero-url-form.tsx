@@ -13,16 +13,16 @@ export function HeroUrlForm({ isLoggedIn }: { isLoggedIn: boolean }) {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!url.trim()) return;
-    if (!isLoggedIn) {
-      router.push("/register");
-      return;
-    }
+    // if (!isLoggedIn) {
+    //   router.push("/register");
+    //   return;
+    // }
     const encoded = encodeURIComponent(url.trim());
     router.push(`/test/new?url=${encoded}`);
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex w-full max-w-lg gap-2">
+    <form onSubmit={handleSubmit} className="flex w-full max-w-4xl gap-2">
       <Input
         type="url"
         placeholder="https://example.com"
@@ -31,10 +31,15 @@ export function HeroUrlForm({ isLoggedIn }: { isLoggedIn: boolean }) {
         className="flex-1 h-12 text-base"
         required
       />
-      <Button type="submit" size="lg" className="gap-2 h-12">
-        Run QA Test
-        <ArrowRight className="h-4 w-4" />
-      </Button>
+      <div className="flex flex-col gap-2">
+        <Button type="submit" size="lg" className="gap-2 h-12 text-2xl bg-[#3388cc]">
+          Run QA Test
+          <ArrowRight className="h-4 w-4" />
+        </Button>
+        <Button type="submit" size="lg" className="gap-2 h-12 bg-gray-500 hover:bg-gray-600">
+          Login To Change Options
+        </Button>
+      </div>
     </form>
   );
 }

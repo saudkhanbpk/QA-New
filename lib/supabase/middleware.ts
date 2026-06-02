@@ -29,10 +29,14 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const protectedRoutes = ["/dashboard", "/test"];
-  const isProtected = protectedRoutes.some((r) =>
-    request.nextUrl.pathname.startsWith(r)
-  );
+  const pathname = request.nextUrl.pathname;
+  const isDashboard = pathname.startsWith("/dashboard");
+  const isTestNew = pathname.startsWith("/test/new");
+  // Check if it's a UUID test report page like /test/123e4567-e89b-12d3-a456-426614174000
+  const isTestReport = /^\/test\/[0-9a-fA-F-]{36}$/.test(pathname);
+
+  // Protected routes: dashboard is always protected; /test is protected EXCEPT for /test/new and report pages
+  const isProtected = isDashboard || (pathname.startsWith("/test") && !isTestNew && !isTestReport);
 
   if (!user && isProtected) {
     const url = request.nextUrl.clone();

@@ -8,13 +8,10 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    return new Response("Unauthorized", { status: 401 });
-  }
 
   const searchParams = request.nextUrl.searchParams;
   const testRunId = searchParams.get("testRunId");
-  
+
   if (!testRunId) {
     return new Response("testRunId is required", { status: 400 });
   }
@@ -24,16 +21,19 @@ export async function GET(request: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
       const admin = createAdminClient();
-      
+
       // Poll for updates every 2 seconds
       const interval = setInterval(async () => {
         try {
-          const { data: run } = await admin
-            .from("test_runs")
-            .select("*")
-            .eq("id", testRunId)
-            .eq("user_id", user.id)
-            .single();
+          let query = admin.from("test_runs").select("*").eq("id", testRunId);
+
+          if (user) {
+            query = query.eq("user_id", user.id);
+          } else {
+            query = query.is("user_id", null);
+          }
+
+          const { data: run } = await query.single();
 
           if (!run) {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: "Test not found" })}\n\n`));

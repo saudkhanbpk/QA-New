@@ -36,7 +36,7 @@ export function NewTestForm({ prefillUrl }: { prefillUrl?: string }) {
     broken_links: true,
     compatibility: true,
     security: true,
-    others: false,
+    others: true,
   });
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -94,7 +94,7 @@ export function NewTestForm({ prefillUrl }: { prefillUrl?: string }) {
         urlsToTest.map(async (testUrl, index) => {
           // ⚡ Stagger submissions by 150ms to avoid hammering the API/ECS
           if (index > 0) await new Promise(r => setTimeout(r, index * 150));
-          
+
           return fetch("/api/test/run", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -245,7 +245,7 @@ export function NewTestForm({ prefillUrl }: { prefillUrl?: string }) {
         </CardContent>
       </Card>
 
-      <Card>
+      {/* <Card>
         <CardHeader><CardTitle className="text-base">Viewports</CardTitle></CardHeader>
         <CardContent className="flex gap-3 flex-wrap">
           {VIEWPORTS.map(({ id, label, desc }) => (
@@ -257,9 +257,9 @@ export function NewTestForm({ prefillUrl }: { prefillUrl?: string }) {
             </button>
           ))}
         </CardContent>
-      </Card>
+      </Card> */}
 
-      <Card>
+      {/* <Card>
         <CardHeader><CardTitle className="text-base">Checks to run</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           {CHECKS.map(({ id, label, desc }) => (
@@ -274,7 +274,7 @@ export function NewTestForm({ prefillUrl }: { prefillUrl?: string }) {
             </label>
           ))}
         </CardContent>
-      </Card>
+      </Card> */}
 
       {error && <div className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-md">{error}</div>}
       {loading && (

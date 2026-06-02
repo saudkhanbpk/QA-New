@@ -21,12 +21,10 @@ export default async function TestReportPage({
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  if (!user) redirect("/login");
-
   // List of super admin email addresses
   const SUPER_ADMINS = ["admin@autoqa.com"];
-  const userEmail = (user.email || "").toLowerCase();
-  const isAdmin = SUPER_ADMINS.some(admin => admin.toLowerCase() === userEmail);
+  const userEmail = (user?.email || "").toLowerCase();
+  const isAdmin = user ? SUPER_ADMINS.some(admin => admin.toLowerCase() === userEmail) : false;
 
   // Use admin client for admins to bypass RLS, regular client for users
   const dbClient = isAdmin ? createAdminClient() : supabase;
@@ -37,9 +35,13 @@ export default async function TestReportPage({
     .select("*")
     .eq("id", id);
 
-  // If not admin, restrict to user's own tests
+  // If not admin, restrict to user's own tests or anonymous tests
   if (!isAdmin) {
-    query.eq("user_id", user.id);
+    if (user) {
+      query.eq("user_id", user.id);
+    } else {
+      query.is("user_id", null);
+    }
   }
 
   const { data: run } = await query.single();
@@ -69,7 +71,7 @@ export default async function TestReportPage({
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Navbar userEmail={user.email} />
+      <Navbar userEmail={user?.email} />
       <main className="flex-1 container py-8 max-w-5xl">
         {/* Back Button */}
         <Link href={backUrl}>
