@@ -1,35 +1,44 @@
-import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+"use client";
 
-export const dynamic = "force-dynamic";
 import { Navbar } from "@/components/navbar";
 import { NewTestForm } from "@/components/new-test-form";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
-export default async function NewTestPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ url?: string }>;
-}) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+export const dynamic = "force-dynamic";
 
-  const params = await searchParams;
-  const prefillUrl = params.url ? decodeURIComponent(params.url) : "";
+export default function NewTestPage({ searchParams }: { searchParams: { id?: string } }) {
+  const runId = searchParams.id;
+
+  if (!runId) {
+    return (
+      <div className="min-h-screen flex flex-col bg-gray-200 text-slate-900">
+        <Navbar />
+        <main className="flex-1 flex items-center justify-center px-4">
+          <Card className="w-full max-w-md bg-white border-slate-200">
+            <CardHeader>
+              <CardTitle>No Test Run Found</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-slate-600">
+                Enter a URL on the home page to create a test run and view results here.
+              </p>
+              <Button onClick={() => window.location.href = "/"} className="w-full">
+                Go to Home
+              </Button>
+            </CardContent>
+          </Card>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-200 text-slate-900">
-      <Navbar userEmail={user?.email} />
-      <main className={`flex-1 ${prefillUrl ? 'max-w-screen-2xl mx-auto px-4 w-full' : 'container max-w-2xl'} py-8`}>
-        {!prefillUrl && (
-          <div className="mb-8 animate-in fade-in slide-in-from-top-4 duration-500">
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900">New QA Audit</h1>
-            <p className="text-slate-600 text-sm mt-2">
-              Deep-scan any website for performance, SEO, and security vulnerabilities.
-            </p>
-          </div>
-        )}
+      <Navbar />
+      <main className="flex-1 max-w-screen-2xl mx-auto px-4 w-full py-8">
         <div className="w-full">
-          <NewTestForm prefillUrl={prefillUrl} />
+          <NewTestForm testRunId={runId} />
         </div>
       </main>
     </div>

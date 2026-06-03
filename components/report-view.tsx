@@ -786,15 +786,15 @@ function OthersTabContent({ results }: { results: TestResult[] }) {
       )}
 
       {/* Responsive Section */}
-      {bySubCategory.responsive.length > 0 && (
+      {bySubCategory.responsive?.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center gap-2 pb-2 border-b">
             <h3 className="text-sm font-semibold text-primary">📱 Responsive Design Checks</h3>
             <span className="text-xs text-muted-foreground">
-              ({bySubCategory.responsive.filter(r => r.status === "pass").length}/{bySubCategory.responsive.length} passed)
+              ({bySubCategory.responsive?.filter(r => r.status === "pass").length}/{bySubCategory.responsive?.length} passed)
             </span>
           </div>
-          {bySubCategory.responsive.map((r) => <ResultCard key={r.id} result={r} />)}
+          {bySubCategory.responsive?.map((r) => <ResultCard key={r.id} result={r} />)}
         </div>
       )}
 

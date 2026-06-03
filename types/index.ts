@@ -52,6 +52,7 @@ export interface TestResult {
   fix_recommendation: string | null;
   screenshot_url: string | null;
   created_at: string;
+  responsive: boolean;
 }
 
 export interface Screenshot {
