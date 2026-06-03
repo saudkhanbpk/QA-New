@@ -35,18 +35,22 @@ export async function GET(request: NextRequest) {
 
           const { data: run } = await query.single();
 
-          if (!run) {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: "Test not found" })}\n\n`));
-            clearInterval(interval);
-            controller.close();
-            return;
-          }
+          // Also fetch the latest screenshot for live preview
+          const { data: latestScreenshot } = await admin
+            .from("screenshots")
+            .select("image_url, viewport")
+            .eq("test_run_id", testRunId)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
           // Send progress update
           const update = {
             status: run.status,
             overall_score: run.overall_score,
             completed_at: run.completed_at,
+            screenshot_url: latestScreenshot?.image_url || null,
+            viewport: latestScreenshot?.viewport || null,
           };
 
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(update)}\n\n`));

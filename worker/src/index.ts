@@ -1,3 +1,8 @@
+console.log("--------------------------------------------------");
+console.log(`WORKER BOOT: ${new Date().toISOString()}`);
+console.log(`TEST_RUN_ID: ${process.env.TEST_RUN_ID}`);
+console.log("--------------------------------------------------");
+
 import { createClient } from "@supabase/supabase-js";
 import { getFixRecommendation } from "./fix-recommendations";
 import type { Viewport, Category, ResultStatus, Severity } from "./types";
@@ -111,8 +116,28 @@ async function validateNetworkSpeed(): Promise<NetworkSpeedResult> {
 async function main() {
   const testRunId = process.env.TEST_RUN_ID;
   const url = process.env.TARGET_URL;
-  const viewports = JSON.parse(process.env.VIEWPORTS || '["desktop"]');
-  const checks = JSON.parse(process.env.CHECKS || '{"performance":true,"broken_links":true,"compatibility":true,"security":true,"others":false}');
+
+  let viewports: Viewport[] = ["desktop"];
+  try {
+    if (process.env.VIEWPORTS) {
+      if (process.env.VIEWPORTS.startsWith("[") || process.env.VIEWPORTS.startsWith('"')) {
+        viewports = JSON.parse(process.env.VIEWPORTS);
+      } else {
+        viewports = process.env.VIEWPORTS.split(",").map(v => v.trim()) as Viewport[];
+      }
+    }
+  } catch (e) {
+    console.warn("Failed to parse viewports, using default:", e);
+  }
+
+  let checks = { performance: true, broken_links: true, compatibility: true, security: true, others: false };
+  try {
+    if (process.env.CHECKS) {
+      checks = JSON.parse(process.env.CHECKS);
+    }
+  } catch (e) {
+    console.warn("Failed to parse checks, using default:", e);
+  }
 
   if (!testRunId || !url) {
     console.error("Missing TEST_RUN_ID or TARGET_URL environment variables");
@@ -130,19 +155,16 @@ async function main() {
   const WebSocket = require('ws');
 
   const admin = createClient(supabaseUrl, supabaseServiceKey, {
-    auth: {
-      persistSession: false
-    },
-    realtime: {
-      transport: WebSocket
-    }
+    auth: { persistSession: false },
+    realtime: { transport: WebSocket }
   });
 
   console.log(`🚀 Fargate Worker started for Test Run: ${testRunId} | URL: ${url}`);
 
   try {
-    // ── RUN NETWORK SPEED VALIDATOR ──────────────────
+    console.log("Starting network speed validation...");
     const speedReport = await validateNetworkSpeed();
+    console.log("Network status:", speedReport.isStable ? "STABLE" : "UNSTABLE");
 
     // Insert network validation result into test_results
     await admin.from("test_results").insert({
@@ -169,13 +191,19 @@ async function main() {
     }
 
     await runTests(testRunId, url, viewports, checks, admin, speedReport.timeouts);
+
     console.log("✅ Test completed successfully.");
     process.exit(0);
+
   } catch (err) {
     console.error("❌ Test runner error:", err);
-    await admin.from("test_runs")
-      .update({ status: "failed", completed_at: new Date().toISOString() })
-      .eq("id", testRunId);
+    try {
+      await admin.from("test_runs")
+        .update({ status: "failed", completed_at: new Date().toISOString() })
+        .eq("id", testRunId);
+    } catch (e) {
+      console.error("Failed to mark test as failed:", e);
+    }
     process.exit(1);
   }
 }
@@ -318,6 +346,7 @@ async function runTests(
       console.log(`Pre-warming target page for ${viewport}...`);
       try {
         const { chromium } = await import("playwright");
+        console.log(`Pre-warming browser launching for ${viewport}...`);
         const preWarmBrowser = await chromium.launch({ headless: true });
         const preWarmContext = await preWarmBrowser.newContext({
           viewport: VIEWPORT_SIZES[viewport],
@@ -326,8 +355,30 @@ async function runTests(
             : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         });
         const preWarmPage = await preWarmContext.newPage();
+        console.log(`Navigating to ${url} for pre-warm...`);
         await preWarmPage.goto(url, { waitUntil: "networkidle", timeout: 20000 });
+        console.log("Pre-warm navigation complete.");
         await new Promise(r => setTimeout(r, 1500)); // allow page scripts to settle
+        // Capture early live preview screenshot
+        const buf = await preWarmPage.screenshot({ fullPage: false, type: "png" });
+        const fileName = `live/${testRunId}-${viewport}-${Date.now()}.png`;
+
+        // Upload to storage
+        await admin.storage
+          .from("screenshots")
+          .upload(fileName, buf, { contentType: "image/png", upsert: true });
+
+        const { data: urlData } = admin.storage.from("screenshots").getPublicUrl(fileName);
+        const imageUrl = urlData?.publicUrl || "";
+
+        // Insert into screenshots table for the live stream to pick up
+        await admin.from("screenshots").insert({
+          test_run_id: testRunId,
+          viewport,
+          image_url: imageUrl
+        });
+
+        console.log(`Live preview screenshot uploaded for ${viewport}`);
         await preWarmBrowser.close();
         console.log("Pre-warming complete.");
       } catch (err) {
@@ -356,6 +407,7 @@ async function runTests(
         const isMobile = viewport !== "desktop";
         const { width, height } = VIEWPORT_SIZES[viewport];
 
+        console.log(`Lighthouse scan starting for ${viewport} on port ${debugPort}...`);
         // ⚡ Full Lighthouse scan (Performance, Accessibility, Best Practices, SEO)
         const lhResult = await lighthouse(url, {
           port: debugPort,
@@ -805,47 +857,50 @@ export function handleSummary(data) {
             const emptyLinks: string[] = [];
             let timeoutCount = 0;
 
-            // Check links in batches to avoid overwhelming the server
-            const batchSize = 20; // ⚡ Increased from 15 to 20 for faster parallel checking
-            for (let i = 0; i < linkData.length; i += batchSize) {
-              const batch = linkData.slice(i, i + batchSize);
-              await Promise.all(batch.map(async (link) => {
-                try {
-                  // Use AbortController for timeout
-                  const controller = new AbortController();
-                  const timeoutId = setTimeout(() => controller.abort(), timeouts.linkCheckMs);
-
-                  const r = await fetch(link.href, {
-                    method: "HEAD",
-                    redirect: "follow",
-                    signal: controller.signal,
-                    headers: {
-                      "User-Agent": "Mozilla/5.0 (compatible; QATester/1.0)",
-                      "Accept": "*/*"
+            // Check links in batches — with a master 90s timeout to avoid hanging
+            const batchSize = 10;
+            const linkCheckWithTimeout = new Promise<void>(async (resolve) => {
+              const linksToCheck = linkData.slice(0, 30); // Hard limit of 30 links
+              for (let i = 0; i < linksToCheck.length; i += batchSize) {
+                const batch = linksToCheck.slice(i, i + batchSize);
+                await Promise.all(batch.map(async (link) => {
+                  try {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), timeouts.linkCheckMs);
+                    const r = await fetch(link.href, {
+                      method: "HEAD",
+                      redirect: "follow",
+                      signal: controller.signal,
+                      headers: {
+                        "User-Agent": "Mozilla/5.0 (compatible; QATester/1.0)",
+                        "Accept": "*/*"
+                      }
+                    });
+                    clearTimeout(timeoutId);
+                    if (r.status === 404 || r.status === 410 || r.status >= 500) {
+                      brokenLinks.push(`${link.text} → ${link.href.slice(0, 60)} (HTTP ${r.status})`);
+                    } else if (r.status >= 200 && r.status < 400) {
+                      workingLinks.push(link.href);
                     }
-                  });
-
-                  clearTimeout(timeoutId);
-
-                  // Check for broken links (404, 410, 500+)
-                  if (r.status === 404 || r.status === 410 || r.status >= 500) {
-                    brokenLinks.push(`${link.text} → ${link.href.slice(0, 60)} (HTTP ${r.status})`);
-                  } else if (r.status >= 200 && r.status < 400) {
-                    // Link is working (2xx or 3xx)
-                    workingLinks.push(link.href);
+                  } catch (err) {
+                    if (err instanceof Error && err.name === 'AbortError') {
+                      timeoutCount++;
+                    } else {
+                      brokenLinks.push(`${link.text} → ${link.href.slice(0, 60)} (Network Error)`);
+                      console.log(`Link check failed for ${link.href.slice(0, 60)}: ${err instanceof Error ? err.message : 'unknown error'}`);
+                    }
                   }
-                } catch (err) {
-                  if (err instanceof Error && err.name === 'AbortError') {
-                    // Timeout - don't mark as broken, just count (suppress log spam)
-                    timeoutCount++;
-                  } else {
-                    // Network error - mark as broken
-                    brokenLinks.push(`${link.text} → ${link.href.slice(0, 60)} (Network Error)`);
-                    console.log(`Link check failed for ${link.href.slice(0, 60)}: ${err instanceof Error ? err.message : 'unknown error'}`);
-                  }
-                }
-              }));
-            }
+                }));
+              }
+              resolve();
+            });
+
+            const masterLinkTimeout = new Promise<void>(resolve => setTimeout(() => {
+              console.warn("Link checking master timeout (90s) reached — proceeding with partial results.");
+              resolve();
+            }, 90000));
+
+            await Promise.race([linkCheckWithTimeout, masterLinkTimeout]);
 
             // Check for empty/placeholder links
             const placeholderLinks = await page.evaluate(() =>
@@ -1194,71 +1249,88 @@ export function handleSummary(data) {
         screenshot_url: null
       });
 
-      // ⚡ Run all 3 browsers in parallel for 3x faster testing
+      // ⚡ Run browsers in parallel with safe detection
       const [chromiumResult, firefoxResult, webkitResult] = await Promise.allSettled([
         // Chromium test
         (async () => {
-          const chromiumBrowser = await chromium.launch({ headless: true });
+          console.log("Launching Chromium for compatibility check...");
+          const chromiumBrowser = await chromium.launch({ headless: true }).catch(() => null);
+          if (!chromiumBrowser) throw new Error("Chromium not installed");
           const chromiumContext = await chromiumBrowser.newContext({ viewport: testViewport });
           const chromiumPage = await chromiumContext.newPage();
           const chromiumConsoleErrors: string[] = [];
           chromiumPage.on("console", msg => { if (msg.type() === "error") chromiumConsoleErrors.push(msg.text()); });
           chromiumPage.on("pageerror", err => chromiumConsoleErrors.push(err.message));
 
-          const chromiumResponse = await chromiumPage.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 }); // ⚡ Increased to 60s for slow sites
-          let chromiumScreenshot: Buffer | null = null;
-
-          if (chromiumResponse && chromiumResponse.status() < 400) {
-            await chromiumPage.waitForTimeout(500); // ⚡ Reduced from 800ms to 500ms
-            chromiumScreenshot = await chromiumPage.screenshot({ fullPage: false, type: "png" });
+          try {
+            const chromiumResponse = await chromiumPage.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+            let chromiumScreenshot: Buffer | null = null;
+            if (chromiumResponse && chromiumResponse.status() < 400) {
+              await chromiumPage.waitForTimeout(500);
+              chromiumScreenshot = await chromiumPage.screenshot({ fullPage: false, type: "png" });
+            }
+            return { screenshot: chromiumScreenshot, consoleErrors: chromiumConsoleErrors, response: chromiumResponse };
+          } finally {
+            await chromiumBrowser.close();
           }
-
-          await chromiumBrowser.close();
-          return { screenshot: chromiumScreenshot, consoleErrors: chromiumConsoleErrors, response: chromiumResponse };
         })(),
 
         // Firefox test
         (async () => {
-          const firefoxBrowser = await firefox.launch({ headless: true });
+          console.log("Checking Firefox installation...");
+          const firefoxBrowser = await firefox.launch({ headless: true }).catch(() => null);
+          if (!firefoxBrowser) {
+            console.log("Firefox not installed, skipping...");
+            return { screenshot: null, consoleErrors: [], response: null, skipped: true };
+          }
           const firefoxContext = await firefoxBrowser.newContext({ viewport: testViewport });
           const firefoxPage = await firefoxContext.newPage();
           const firefoxConsoleErrors: string[] = [];
           firefoxPage.on("console", msg => { if (msg.type() === "error") firefoxConsoleErrors.push(msg.text()); });
           firefoxPage.on("pageerror", err => firefoxConsoleErrors.push(err.message));
 
-          const firefoxResponse = await firefoxPage.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 }); // ⚡ Increased to 60s for slow sites
-          let firefoxScreenshot: Buffer | null = null;
-
-          if (firefoxResponse && firefoxResponse.status() < 400) {
-            await firefoxPage.waitForTimeout(500); // ⚡ Reduced from 800ms to 500ms
-            firefoxScreenshot = await firefoxPage.screenshot({ fullPage: false, type: "png" });
+          try {
+            const firefoxResponse = await firefoxPage.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+            let firefoxScreenshot: Buffer | null = null;
+            if (firefoxResponse && firefoxResponse.status() < 400) {
+              await firefoxPage.waitForTimeout(500);
+              firefoxScreenshot = await firefoxPage.screenshot({ fullPage: false, type: "png" });
+            }
+            return { screenshot: firefoxScreenshot, consoleErrors: firefoxConsoleErrors, response: firefoxResponse };
+          } finally {
+            await firefoxBrowser.close();
           }
-
-          await firefoxBrowser.close();
-          return { screenshot: firefoxScreenshot, consoleErrors: firefoxConsoleErrors, response: firefoxResponse };
         })(),
 
         // WebKit test
         (async () => {
-          const webkitBrowser = await webkit.launch({ headless: true });
+          console.log("Checking WebKit installation...");
+          const webkitBrowser = await webkit.launch({ headless: true }).catch(() => null);
+          if (!webkitBrowser) {
+            console.log("WebKit not installed, skipping...");
+            return { screenshot: null, consoleErrors: [], response: null, skipped: true };
+          }
           const webkitContext = await webkitBrowser.newContext({ viewport: testViewport });
           const webkitPage = await webkitContext.newPage();
           const webkitConsoleErrors: string[] = [];
           webkitPage.on("console", msg => { if (msg.type() === "error") webkitConsoleErrors.push(msg.text()); });
           webkitPage.on("pageerror", err => webkitConsoleErrors.push(err.message));
 
-          const webkitResponse = await webkitPage.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 }); // ⚡ Increased to 60s for slow sites
-          let webkitScreenshot: Buffer | null = null;
-
-          if (webkitResponse && webkitResponse.status() < 400) {
-            await webkitPage.waitForTimeout(500); // ⚡ Reduced from 800ms to 500ms
-            webkitScreenshot = await webkitPage.screenshot({ fullPage: false, type: "png" });
+          try {
+            const webkitResponse = await webkitPage.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+            let webkitScreenshot: Buffer | null = null;
+            if (webkitResponse && webkitResponse.status() < 400) {
+              await webkitPage.waitForTimeout(500);
+              webkitScreenshot = await webkitPage.screenshot({ fullPage: false, type: "png" });
+            }
+            return { screenshot: webkitScreenshot, consoleErrors: webkitConsoleErrors, response: webkitResponse };
+          } finally {
+            await webkitBrowser.close();
           }
-
-          await webkitBrowser.close();
-          return { screenshot: webkitScreenshot, consoleErrors: webkitConsoleErrors, response: webkitResponse };
         })(),
       ]);
+
+      console.log("Processing compatibility results...");
 
       // Process Chromium results
       if (chromiumResult.status === "fulfilled") {

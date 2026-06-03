@@ -39,7 +39,7 @@ export default async function HomePage() {
         <h1 className="text-3xl sm:text-4xl md:text-6xl font-bold tracking-tight text-white mb-4">
           Test your website <span className="text-[#003366]">Speed</span>
         </h1>
-        <p className="text-muted-foreground text-base text-gray-300 sm:text-lg md:text-2xl text-[#ffffff] font-semibold max-w-4xl mb-8">
+        <p className="sm:text-lg md:text-2xl text-gray-200 font-semibold max-w-4xl mb-8">
           QA-Tester tells you how your website performs, why it's slow, and how to optimize it.
         </p>
         <HeroUrlForm isLoggedIn={!!user} />

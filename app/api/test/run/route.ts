@@ -6,6 +6,7 @@ import type { Viewport } from "@/types";
 import { ECSClient, RunTaskCommand } from "@aws-sdk/client-ecs";
 import { spawn } from "child_process";
 import path from "path";
+import fs from "fs";
 
 interface RunPayload {
   url: string;
@@ -74,24 +75,56 @@ export async function POST(request: NextRequest) {
   if (useLocalWorker) {
     // ⚡ Trigger Local Worker (Useful for development and local testing)
     try {
+      const workerDir = path.join(process.cwd(), "worker");
+      const logsDir = path.join(workerDir, "logs");
+      if (!fs.existsSync(logsDir)) {
+        fs.mkdirSync(logsDir, { recursive: true });
+      }
+
+      const logFile = path.join(logsDir, `${testRun.id}.log`);
+      fs.writeFileSync(logFile, `--- API INIT: ${new Date().toISOString()} ---\n`);
+
       console.log(`Triggering Local Worker for test run ${testRun.id}...`);
 
-      const child = spawn("npx", ["ts-node", "src/index.ts"], {
-        cwd: path.join(process.cwd(), "worker"),
-        shell: true,
+      const logFd = fs.openSync(logFile, "a");
+
+      // Find the direct path to ts-node
+      const tsNodeBin = path.join(workerDir, "node_modules", ".bin", "ts-node" + (process.platform === "win32" ? ".cmd" : ""));
+
+      const child = spawn(tsNodeBin, ["src/index.ts"], {
+        cwd: workerDir,
+        shell: process.platform === "win32", // Required for .cmd files on Windows
         detached: true,
-        stdio: "ignore",
+        stdio: ["ignore", logFd, logFd],
         env: {
           ...process.env,
           TEST_RUN_ID: testRun.id,
           TARGET_URL: url,
           VIEWPORTS: JSON.stringify(viewports),
           CHECKS: JSON.stringify(checks),
+          NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+          SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+          AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID,
+          AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY,
+          AWS_REGION: process.env.AWS_REGION,
+          FORCE_COLOR: "1"
         }
       });
 
       child.unref();
+
+      // Increased delay before closing FD in parent to ensure child process has fully hooked it
+      setTimeout(() => {
+        try {
+          fs.closeSync(logFd);
+          console.log(`Log handle released for ${testRun.id}`);
+        } catch (e) {
+          // ignore
+        }
+      }, 10000);
+
       console.log(`Successfully triggered local worker process for ${testRun.id}`);
+      console.log(`To view live logs run: Get-Content -Wait '${logFile}'`);
     } catch (localError) {
       console.error("Failed to trigger local worker:", localError);
       await admin.from("test_runs")

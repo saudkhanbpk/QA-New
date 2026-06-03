@@ -21,7 +21,7 @@ export default async function AdminPage() {
   // Check if user is super admin (case-insensitive)
   const userEmail = (user.email || "").toLowerCase();
   const isAdmin = SUPER_ADMINS.some(admin => admin.toLowerCase() === userEmail);
-  
+
   if (!isAdmin) {
     redirect("/dashboard");
   }

@@ -17,16 +17,20 @@ export default async function NewTestPage({
   const prefillUrl = params.url ? decodeURIComponent(params.url) : "";
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-gray-200 text-slate-900">
       <Navbar userEmail={user?.email} />
-      <main className="flex-1 container py-8 max-w-2xl">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold">New QA Test</h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            Configure and run automated checks on any webpage.
-          </p>
+      <main className={`flex-1 ${prefillUrl ? 'max-w-screen-2xl mx-auto px-4 w-full' : 'container max-w-2xl'} py-8`}>
+        {!prefillUrl && (
+          <div className="mb-8 animate-in fade-in slide-in-from-top-4 duration-500">
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900">New QA Audit</h1>
+            <p className="text-slate-600 text-sm mt-2">
+              Deep-scan any website for performance, SEO, and security vulnerabilities.
+            </p>
+          </div>
+        )}
+        <div className="w-full">
+          <NewTestForm prefillUrl={prefillUrl} />
         </div>
-        <NewTestForm prefillUrl={prefillUrl} />
       </main>
     </div>
   );
