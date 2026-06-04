@@ -53,6 +53,7 @@ export function NewTestForm({ prefillUrl, testRunId }: { prefillUrl?: string; te
   const [report, setReport] = useState<TestReport | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const hasAutoStarted = useRef(false);
+  const lastScreenshotRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (testRunId && !hasAutoStarted.current) {
@@ -134,6 +135,7 @@ export function NewTestForm({ prefillUrl, testRunId }: { prefillUrl?: string; te
         const data = JSON.parse(event.data);
 
         if (data.screenshot_url) setLiveScreenshot(data.screenshot_url);
+        lastScreenshotRef.current = data.screenshot_url;
         if (data.viewport) setLiveViewport(data.viewport);
 
         if (data.status) {
@@ -240,6 +242,7 @@ export function NewTestForm({ prefillUrl, testRunId }: { prefillUrl?: string; te
           try {
             const data = JSON.parse(event.data);
             if (data.screenshot_url) setLiveScreenshot(data.screenshot_url);
+            lastScreenshotRef.current = data.screenshot_url;
             if (data.viewport) setLiveViewport(data.viewport);
             testStatuses.set(id, data.status);
             const completed = Array.from(testStatuses.values()).filter(s => s === "completed").length;
@@ -273,6 +276,11 @@ export function NewTestForm({ prefillUrl, testRunId }: { prefillUrl?: string; te
       setLoading(false); setProgress(0);
     }
   }
+  const getsrc = (report: TestReport | null) => {
+    const ScreenShot = report?.screenshots.find(s => s.viewport === "desktop");
+    const imageurl = ScreenShot?.image_url;
+    return imageurl || null;
+  };
 
   // ── 1. LOADING / RESULTS STATE ───────────────────────────────────────────────
   if (loading || showReport) {
@@ -280,14 +288,16 @@ export function NewTestForm({ prefillUrl, testRunId }: { prefillUrl?: string; te
       <div className="w-full md:px-10 mx-auto space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
 
         {/* Header */}
-        <div className="space-y-2 border-b border-slate-300 pb-8">
-          <h1 className="text-3xl md:text-4xl font-bold text-[#3388cc] flex items-center gap-3">
-            {showReport ? "Test Complete" : "Analyzing your URL..."}
-          </h1>
-          <p className="text-xl md:text-2xl font-semibold text-gray-500 truncate max-w-4xl">
-            {url || urls.split('\n')[0]}
-          </p>
-        </div>
+       {!showReport && (
+  <div className="space-y-2 border-b border-slate-300 pb-8">
+    <h1 className="text-3xl md:text-4xl font-bold text-[#3388cc] flex items-center gap-3">
+      Analyzing your URL...
+    </h1>
+    <p className="text-xl md:text-2xl font-semibold text-gray-500 truncate max-w-4xl">
+      {url || urls.split('\n')[0]}
+    </p>
+  </div>
+)}
 
         {/* 2-Column: Device + Steps */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-start">
@@ -313,6 +323,8 @@ export function NewTestForm({ prefillUrl, testRunId }: { prefillUrl?: string; te
                     <div className="aspect-video border border-[#3a3a3a] border-t-0 rounded-b-xl overflow-hidden bg-white relative">
                       {liveScreenshot ? (
                         <img src={liveScreenshot} alt="Desktop preview" className="w-full h-full object-cover object-top transition-all duration-700" />
+                      ) : showReport ? (
+                        <img src={getsrc(report)} alt="Desktop preview" className="w-full h-full object-cover object-top transition-all duration-700" />
                       ) : (
                         <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-50 gap-3">
                           <Loader2 className="h-8 w-8 animate-spin text-primary opacity-30" />
@@ -395,85 +407,99 @@ export function NewTestForm({ prefillUrl, testRunId }: { prefillUrl?: string; te
               </div>
 
               {/* Runner Identity */}
-              <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="p-5 rounded-2xl bg-white border border-slate-300 shadow-sm flex items-center gap-4">
-                  <div className="h-12 w-12 rounded-xl bg-blue-50 flex items-center justify-center text-xl">🇺🇸</div>
-                  <div>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Test Server</p>
-                    <p className="text-sm font-bold text-slate-800">Virginia, USA</p>
+              {/* Runner Identity — hidden when test is complete */}
+              {!showReport && (
+                <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="p-5 rounded-2xl bg-white border border-slate-300 shadow-sm flex items-center gap-4">
+                    <div className="h-12 w-12 rounded-xl bg-blue-50 flex items-center justify-center text-xl">🇺🇸</div>
+                    <div>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Test Server</p>
+                      <p className="text-sm font-bold text-slate-800">Virginia, USA</p>
+                    </div>
+                  </div>
+                  <div className="p-5 rounded-2xl bg-white border border-slate-300 shadow-sm flex items-center gap-4">
+                    <div className="h-12 w-12 rounded-xl bg-blue-50 flex items-center justify-center">
+                      <Play className="h-6 w-6 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Browser Engine</p>
+                      <p className="text-sm font-bold text-slate-800">Playwright / Chromium</p>
+                    </div>
                   </div>
                 </div>
-                <div className="p-5 rounded-2xl bg-white border border-slate-300 shadow-sm flex items-center gap-4">
-                  <div className="h-12 w-12 rounded-xl bg-blue-50 flex items-center justify-center">
-                    <Play className="h-6 w-6 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Browser Engine</p>
-                    <p className="text-sm font-bold text-slate-800">Playwright / Chromium</p>
-                  </div>
-                </div>
-              </div>
+              )}
             </div>
           </div>
 
           {/* Right: Steps (5/12) */}
           <div className="lg:col-span-5 space-y-6">
-            <div className="space-y-4">
-              {[
-                { label: "Adding job to queue...",          minPrg: 0,  maxPrg: 20  },
-                { label: "Starting browser instance...",    minPrg: 20, maxPrg: 40  },
-                { label: "Auditing performance metrics...", minPrg: 40, maxPrg: 65  },
-                { label: "Technical QA & Security scan...", minPrg: 65, maxPrg: 90  },
-                { label: "Generating final report...",      minPrg: 90, maxPrg: 100 },
-              ].map((step, i) => {
-                const stepPrg = Math.min(100, Math.max(0, ((progress - step.minPrg) / (step.maxPrg - step.minPrg)) * 100));
-                const isActive = !showReport && progress >= step.minPrg && progress < step.maxPrg;
-                const isDone   = showReport || progress >= step.maxPrg;
-                return (
-                  <div
-                    key={i}
-                    className={`p-5 rounded-2xl border transition-all duration-500 shadow-sm ${
-                      isActive
-                        ? "bg-white border-primary/40 shadow-xl shadow-primary/5 scale-[1.02]"
-                        : isDone
-                        ? "bg-green-50/50 border-green-200"
-                        : "bg-white/40 border-slate-200 opacity-60 grayscale"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-4">
-                        <span className={`text-sm font-black w-6 h-6 rounded-lg flex items-center justify-center transition-colors ${
-                          isDone ? "bg-green-100 text-green-600" : isActive ? "bg-primary text-white" : "bg-slate-100 text-slate-400"
-                        }`}>
-                          {i + 1}
-                        </span>
-                        <h3 className={`text-sm font-bold tracking-tight ${
-                          isDone ? "text-slate-800" : isActive ? "text-slate-900" : "text-slate-400"
-                        }`}>
-                          {step.label}
-                        </h3>
+            {!showReport ? (
+              <div className="space-y-3">
+                {[
+                  { label: "Adding job to queue",          icon: "🗂️", minPrg: 0,  maxPrg: 20  },
+                  { label: "Starting browser instance",    icon: "🌐", minPrg: 20, maxPrg: 40  },
+                  { label: "Auditing performance metrics", icon: "⚡", minPrg: 40, maxPrg: 65  },
+                  { label: "Technical QA & Security scan", icon: "🔒", minPrg: 65, maxPrg: 90  },
+                  { label: "Generating final report",      icon: "📊", minPrg: 90, maxPrg: 100 },
+                ].map((step, i) => {
+                  const stepPrg = Math.min(100, Math.max(0, ((progress - step.minPrg) / (step.maxPrg - step.minPrg)) * 100));
+                  const isActive = progress >= step.minPrg && progress < step.maxPrg;
+                  const isDone   = progress >= step.maxPrg;
+                  if (isActive) return (
+                    <div key={i} className="flex items-center gap-3 px-4 py-3 rounded-xl border border-blue-200 bg-blue-50 shadow-sm">
+                      <div className="h-7 w-7 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+                        <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
                       </div>
-                      {isActive && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
-                      {isDone && (
-                        <div className="h-5 w-5 rounded-full bg-green-500 flex items-center justify-center shadow-lg shadow-green-500/20">
-                          <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={4} d="M5 13l4 4L19 7" />
-                          </svg>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-blue-900 mb-1.5">{step.label}</p>
+                        <div className="h-1 w-full bg-blue-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-blue-400 rounded-full transition-all duration-1000" style={{ width: `${stepPrg}%` }} />
                         </div>
-                      )}
-                    </div>
-                    {(isActive || isDone) && (
-                      <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full transition-all duration-1000 ${isDone ? "w-full bg-green-500" : "bg-primary"}`}
-                          style={{ width: isDone ? "100%" : `${stepPrg}%` }}
-                        />
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-blue-500 animate-pulse shrink-0">Running</span>
+                    </div>
+                  );
+                  if (isDone) return (
+                    <div key={i} className="flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-200 bg-white">
+                      <div className="h-7 w-7 rounded-full bg-green-500 flex items-center justify-center shrink-0 shadow-sm shadow-green-200">
+                        <svg className="h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                      <p className="flex-1 text-sm font-semibold text-slate-700">{step.label}</p>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-green-600 bg-green-50 border border-green-200 px-2.5 py-1 rounded-full">Completed</span>
+                    </div>
+                  );
+                  return (
+                    <div key={i} className="flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-100 bg-white/50 opacity-50">
+                      <div className="h-7 w-7 rounded-full bg-slate-100 flex items-center justify-center shrink-0 text-sm">{step.icon}</div>
+                      <p className="flex-1 text-sm font-semibold text-slate-400">{step.label}</p>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-300 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-full">Queued</span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              /* ── COMPLETED: Performance Report Header ── */
+              <div className="animate-in fade-in slide-in-from-bottom-4 duration-700 space-y-5">
+                <div>
+                  <h2 className="text-2xl md:text-3xl lg:text-4xl md:mt-10 font-semibold text-[#3388cc] leading-tight">Latest Performance Report for:</h2>
+                  <p className="text-xl md:text-2xl lg:text-3xl md:mt-5 font-semibold text-slate-600 mt-1 break-all">{url}</p>
+                </div>
+                <div className="border-t border-slate-200 pt-4 space-y-2">
+                  {[
+                    { label: "Report generated", value: new Date().toLocaleString("en-US", { weekday: "short", year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }) },
+                    { label: "Test Server Location", value: "🇺🇸  Seattle, WA, USA" },
+                    { label: "Using", value: "Chrome 142.0.0.0, Lighthouse 12.6.1" },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="flex items-start gap-3 ">
+                      <span className="text-slate-600 font-medium w-44 text-sm md:text-base text-right shrink-0">{label}:</span>
+                      <span className="text-slate-5 00  text-sm md:text-base font-medium">{value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Pro Insight — hide once report is shown */}
             {!showReport && (
@@ -496,7 +522,7 @@ export function NewTestForm({ prefillUrl, testRunId }: { prefillUrl?: string; te
         {/* ── REPORT SLIDES IN BELOW ── */}
         {showReport && report && (
           <div className="animate-in fade-in slide-in-from-bottom-6 duration-700 space-y-6 border-t border-slate-200 pt-10">
-            <div className="flex items-center justify-between">
+            {/* <div className="flex items-center justify-between">
               <div className="space-y-1">
                 <h2 className="text-2xl font-bold text-slate-900">Test Results</h2>
                 <p className="text-sm text-slate-500 truncate max-w-xl">{url}</p>
@@ -519,7 +545,7 @@ export function NewTestForm({ prefillUrl, testRunId }: { prefillUrl?: string; te
                   <RefreshCw className="h-4 w-4" /> New Test
                 </Button>
               </div>
-            </div>
+            </div> */}
             <ReportView report={report} />
           </div>
         )}

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Globe, Clock, ArrowRight, FileText, Layers, ChevronLeft, ChevronRight, TestTube, CheckCircle2, XCircle, Loader2, Calendar } from "lucide-react";
+import { Plus, Globe, Clock, ArrowRight, FileText, Layers, ChevronLeft, ChevronRight, TestTube, CheckCircle2, XCircle, Loader2, Calendar, LayoutGrid } from "lucide-react";
 import type { TestRun } from "@/types";
 
 interface BatchGroup {
@@ -21,9 +21,13 @@ interface BatchGroup {
 
 interface DashboardContentProps {
   testRuns: TestRun[];
+  userEmail?: string | null;
 }
 
-export function DashboardContent({ testRuns }: DashboardContentProps) {
+import { DashboardBanner } from "@/components/dashboard-banner";
+import { SingleTestForm } from "@/components/single-test-form";
+
+export function DashboardContent({ testRuns, userEmail }: DashboardContentProps) {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
@@ -85,7 +89,7 @@ export function DashboardContent({ testRuns }: DashboardContentProps) {
   const completedTests = testRuns.filter(r => r.status === "completed").length;
   const failedTests = testRuns.filter(r => r.status === "failed").length;
   const runningTests = testRuns.filter(r => r.status === "running").length;
-  
+
   // Calculate today's tests
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -96,20 +100,34 @@ export function DashboardContent({ testRuns }: DashboardContentProps) {
   }).length;
 
   return (
-    <main className="flex-1 container py-8 max-w-5xl">
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
+    <main className="flex-1 container py-8 max-w-8xl">
+      <DashboardBanner userEmail={userEmail} />
+
+      <div className="mb-6">
+        <h1 className="text-4xl font-bold text-[#3388cc] mb-2 font-mono">Dashboard</h1>
+        <div className="flex items-center justify-between border-b pb-2">
+          <h2 className="text-xl font-medium text-slate-700 flex items-center gap-2">
+            Single Performance Test
+          </h2>
+          <div className="flex items-center gap-4 text-sm">
+            <button className="text-blue-600 hover:underline">View Bulk Test History</button>
+            <button className="bg-slate-500 text-white px-3 py-1 rounded text-xs font-bold flex items-center gap-1 group">
+              Switch to Bulk Tests
+              <ChevronRight className="h-3 w-3" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <SingleTestForm />
+
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div className="min-w-0">
-          <h1 className="text-2xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground text-sm mt-1 truncate">
+          <h2 className="text-xl font-bold text-slate-800">Recent Activity</h2>
+          <p className="text-muted-foreground text-xs mt-1 truncate">
             {totalItems} test{totalItems !== 1 ? "s" : ""} total ({batches.length} batch{batches.length !== 1 ? "es" : ""}, {singleTests.length} single)
           </p>
         </div>
-        <Link href="/test/new" className="shrink-0">
-          <Button className="gap-2">
-            <Plus className="h-4 w-4" />
-            New Test
-          </Button>
-        </Link>
       </div>
 
       {/* Statistics Cards */}
@@ -180,14 +198,8 @@ export function DashboardContent({ testRuns }: DashboardContentProps) {
             <FileText className="h-12 w-12 text-muted-foreground mb-4" />
             <h3 className="font-semibold text-lg mb-2">No tests yet</h3>
             <p className="text-muted-foreground text-sm mb-4">
-              Run your first QA test to see results here.
+              Enter a URL above to run your first QA test and see results here.
             </p>
-            <Link href="/test/new">
-              <Button className="gap-2">
-                <Plus className="h-4 w-4" />
-                Start your first test
-              </Button>
-            </Link>
           </CardContent>
         </Card>
       ) : (
@@ -278,12 +290,11 @@ function BatchRow({ batch }: { batch: BatchGroup }) {
               {batch.average_score !== null && (
                 <div className="text-center px-3 py-1 rounded-md bg-muted">
                   <p className="text-xs text-muted-foreground">Avg Score</p>
-                  <p className={`text-base font-bold ${
-                    batch.average_score >= 90 ? "text-green-600" :
+                  <p className={`text-base font-bold ${batch.average_score >= 90 ? "text-green-600" :
                     batch.average_score >= 70 ? "text-yellow-600" :
-                    batch.average_score >= 50 ? "text-orange-600" :
-                    "text-red-600"
-                  }`}>
+                      batch.average_score >= 50 ? "text-orange-600" :
+                        "text-red-600"
+                    }`}>
                     {batch.average_score}
                   </p>
                 </div>
@@ -300,7 +311,7 @@ function BatchRow({ batch }: { batch: BatchGroup }) {
             </div>
           </div>
         </div>
-        
+
         {/* Show progress */}
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span className="text-green-600">{batch.completed_tests} completed</span>
@@ -339,12 +350,11 @@ function TestRunRow({ run }: { run: TestRun }) {
           {run.status === "completed" && run.overall_score !== null && (
             <div className="text-center px-3 py-1 rounded-md bg-muted">
               <p className="text-xs text-muted-foreground">Score</p>
-              <p className={`text-base font-bold ${
-                run.overall_score >= 90 ? "text-green-600" :
+              <p className={`text-base font-bold ${run.overall_score >= 90 ? "text-green-600" :
                 run.overall_score >= 70 ? "text-yellow-600" :
-                run.overall_score >= 50 ? "text-orange-600" :
-                "text-red-600"
-              }`}>
+                  run.overall_score >= 50 ? "text-orange-600" :
+                    "text-red-600"
+                }`}>
                 {run.overall_score}
               </p>
             </div>

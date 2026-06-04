@@ -1,15 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { CheckCircle2, XCircle, AlertTriangle, Download, Globe, Clock, Monitor, Smartphone, Tablet, Wrench, RefreshCw, ListTodo, FileSearch, HelpCircle } from "lucide-react";
+import { CheckCircle2, XCircle, AlertTriangle, Download, Globe, Clock, Monitor, Smartphone, Tablet, Wrench, RefreshCw, ListTodo, FileSearch, HelpCircle, Shield } from "lucide-react";
 import type { TestReport, TestResult, Severity, ResultStatus, Category } from "@/types";
-
 interface ReportViewProps { report: TestReport; }
 
 export function ReportView({ report }: ReportViewProps) {
@@ -17,6 +17,16 @@ export function ReportView({ report }: ReportViewProps) {
   const totalFails = results.filter((r) => r.status === "fail").length;
   const totalWarnings = results.filter((r) => r.status === "warning").length;
   const overallPass = totalFails === 0;
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    async function checkUser() {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      setIsLoggedIn(!!session);
+    }
+    checkUser();
+  }, []);
 
   const byCategory: Record<Category, TestResult[]> = {
     performance: results.filter((r) => r.category === "performance"),
@@ -346,13 +356,13 @@ export function ReportView({ report }: ReportViewProps) {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <div className="space-y-2">
-          <div className="flex items-center gap-2 flex-wrap">
+          {/* <div className="flex items-center gap-2 flex-wrap">
             <Globe className="h-4 w-4 text-muted-foreground shrink-0" />
             <span className="font-medium text-sm break-all">{run.page_url}</span>
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Clock className="h-3 w-3" />{new Date(run.created_at).toLocaleString()}
-          </div>
+          </div> */}
           <div className="flex items-center gap-2 flex-wrap">
             <RunStatusBadge status={run.status} />
             {run.status === "completed" && (
@@ -363,19 +373,19 @@ export function ReportView({ report }: ReportViewProps) {
           </div>
         </div>
         <div className="flex gap-2 shrink-0">
-          <Button variant="outline" size="sm" onClick={handleRerun} disabled={rerunLoading} className="gap-2">
+          {/* <Button variant="outline" size="sm" onClick={handleRerun} disabled={rerunLoading} className="gap-2">
             <RefreshCw className={`h-4 w-4 ${rerunLoading ? "animate-spin" : ""}`} />
             {rerunLoading ? "Starting..." : "Rerun Test"}
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleDownloadPDF} disabled={pdfLoading} className="gap-2">
+          </Button> */}
+          {/* <Button variant="outline" size="sm" onClick={handleDownloadPDF} disabled={pdfLoading} className="gap-2">
             <Download className="h-4 w-4" />
             {pdfLoading ? "Generating PDF..." : "Download PDF"}
-          </Button>
+          </Button> */}
         </div>
       </div>
 
       {/* Priority Fixes (To-Do List) */}
-      {priorityFixes.length > 0 && (
+      {/* {priorityFixes.length > 0 && (
         <Card className="border-amber-200 bg-amber-50/30 dark:border-amber-900/50 dark:bg-amber-900/10">
           <CardHeader className="py-3 px-4 flex flex-row items-center gap-2 border-b border-amber-100 dark:border-amber-900/30">
             <ListTodo className="h-4 w-4 text-amber-600 dark:text-amber-400" />
@@ -409,10 +419,10 @@ export function ReportView({ report }: ReportViewProps) {
             </div>
           </CardContent>
         </Card>
-      )}
+      )} */}
 
       {/* Overall Score Card */}
-      {run.status === "completed" && run.overall_score !== null && (
+      {/* {run.status === "completed" && run.overall_score !== null && (
         <Card className="border-2">
           <CardContent className="pt-6">
             <div className="flex flex-col md:flex-row items-center justify-between gap-6">
@@ -475,7 +485,172 @@ export function ReportView({ report }: ReportViewProps) {
           </CardContent>
         </Card>
       )
-      }
+      } */}
+
+      {/* Overall Score Card */}
+      {/* Overall Score Card */}
+      {run.status === "completed" && run.overall_score !== null && (() => {
+        const perfResults = results.filter(r => r.category === "performance");
+
+        function extractMetric(key: string): string | null {
+          const candidates = [
+            ...perfResults.filter(r => r.check_name.toLowerCase().includes("desktop")),
+            ...perfResults,
+          ];
+          for (const r of candidates) {
+            const regex = new RegExp(`${key}[:\\s]+([\\d.]+\\s*(?:ms|s)?)`, "i");
+            const m = r.message.match(regex);
+            if (m) return m[1].trim();
+          }
+          return null;
+        }
+
+        let perfScore: number | null = null;
+        let structureScore: number | null = null;
+        for (const r of perfResults) {
+          if (!perfScore) {
+            const m = r.message.match(/performance[:\s]+(\d+)/i) || r.message.match(/score[:\s]+(\d+)/i);
+            if (m) perfScore = parseInt(m[1]);
+          }
+          if (!structureScore) {
+            const m = r.message.match(/(?:structure|best.practices|accessibility)[:\s]+(\d+)/i);
+            if (m) structureScore = parseInt(m[1]);
+          }
+        }
+        if (!perfScore) perfScore = run.overall_score;
+        if (!structureScore) structureScore = run.overall_score;
+
+        const lcp = extractMetric("LCP") ?? "–";
+        const tbt = extractMetric("TBT") ?? "–";
+        const cls = extractMetric("CLS") ?? "–";
+
+        const grade = perfScore >= 90 ? "A" : perfScore >= 80 ? "B" : perfScore >= 70 ? "C" : perfScore >= 60 ? "D" : "F";
+
+        // Grade uses a green→yellow gradient like GTmetrix
+        const gradeGradient =
+          grade === "A" ? "linear-gradient(135deg, #4CAF50, #8BC34A)" :
+            grade === "B" ? "linear-gradient(135deg, #8BC34A, #CDDC39)" :
+              grade === "C" ? "linear-gradient(135deg, #FFC107, #FF9800)" :
+                grade === "D" ? "linear-gradient(135deg, #FF9800, #FF5722)" :
+                  "linear-gradient(135deg, #F44336, #B71C1C)";
+
+        function scoreColor(v: number) {
+          return v >= 90 ? "#4CAF50" : v >= 70 ? "#FF9800" : "#F44336";
+        }
+
+        function metricColor(key: string, val: string) {
+          const num = parseFloat(val);
+          if (isNaN(num)) return "#aaa";
+          if (key === "LCP") return num <= 2.5 ? "#4CAF50" : num <= 4 ? "#FF9800" : "#F44336";
+          if (key === "TBT") return num <= 200 ? "#4CAF50" : num <= 600 ? "#FF9800" : "#F44336";
+          if (key === "CLS") return num <= 0.1 ? "#4CAF50" : num <= 0.25 ? "#FF9800" : "#F44336";
+          return "#aaa";
+        }
+
+        const QuestionMark = ({ title }: { title: string }) => (
+          <span
+            title={title}
+            className="inline-flex items-center justify-center cursor-help ml-1"
+            style={{
+              width: 15, height: 15, borderRadius: "50%",
+              border: "1.5px solid #b0bec5",
+              fontSize: 9, color: "#90a4ae", fontWeight: 700,
+              verticalAlign: "middle", lineHeight: 1,
+            }}
+          >?</span>
+        );
+
+        return (
+          <div className="flex flex-col sm:flex-row gap-6">
+
+            {/* ── GTmetrix Grade Card ── */}
+            <div className="flex-1">
+              {/* Title above card */}
+              <p className="text-sm md:text-2xl lg:text-3xl font-semibold mb-2" style={{ color: "#3388cc" }}>
+                Performance Grade <QuestionMark title="Overall grade based on Performance and Structure scores" />
+              </p>
+              {/* White card */}
+              <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+                <div className="flex items-stretch" style={{ minHeight: 90 }}>
+
+                  {/* Grade letter */}
+                  <div className="flex items-center justify-center px-7"
+                    style={{ borderRight: "1px solid #e8edf2" }}>
+                    <span
+                      className="font-black select-none leading-none"
+                      style={{
+                        fontSize: 80,
+                        background: gradeGradient,
+                        WebkitBackgroundClip: "text",
+                        WebkitTextFillColor: "transparent",
+                        backgroundClip: "text",
+                      }}
+                    >
+                      {grade}
+                    </span>
+                  </div>
+
+                  {/* Performance */}
+                  <div className="flex flex-col justify-center px-8"
+                    style={{ borderRight: "1px solid #e8edf2" }}>
+                    <p className="text-xs font-medium mb-1" style={{ color: "#78909c" }}>
+                      Performance <QuestionMark title="Lighthouse Performance Score" />
+                    </p>
+                    <p className="font-bold leading-none" style={{ fontSize: 36, color: scoreColor(perfScore!) }}>
+                      {perfScore}%
+                    </p>
+                  </div>
+
+                  {/* Structure */}
+                  <div className="flex flex-col justify-center px-8">
+                    <p className="text-xs font-medium mb-1" style={{ color: "#78909c" }}>
+                      Structure <QuestionMark title="Best Practices / Structure Score" />
+                    </p>
+                    <p className="font-bold leading-none" style={{ fontSize: 36, color: scoreColor(structureScore!) }}>
+                      {structureScore}%
+                    </p>
+                  </div>
+
+                </div>
+              </div>
+            </div>
+
+            {/* ── Web Vitals Card ── */}
+            <div className="flex-1">
+              {/* Title above card */}
+              <p className="text-sm md:text-2xl lg:text-3xl font-semibold mb-2" style={{ color: "#3388cc" }}>
+                Web Vitals <QuestionMark title="Core Web Vitals measured by Lighthouse" />
+              </p>
+              {/* White card */}
+              <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+                <div className="flex items-stretch" style={{ minHeight: 90 }}>
+
+                  {[
+                    { key: "LCP", value: lcp, hint: "Largest Contentful Paint — measures loading performance" },
+                    { key: "TBT", value: tbt, hint: "Total Blocking Time — measures interactivity" },
+                    { key: "CLS", value: cls, hint: "Cumulative Layout Shift — measures visual stability" },
+                  ].map(({ key, value, hint }, idx) => (
+                    <div
+                      key={key}
+                      className="flex-1 flex flex-col justify-center px-6"
+                      style={{ borderRight: idx < 2 ? "1px solid #e8edf2" : undefined }}
+                    >
+                      <p className="text-xs font-medium mb-1" style={{ color: "#78909c" }}>
+                        {key} <QuestionMark title={hint} />
+                      </p>
+                      <p className="font-bold leading-none" style={{ fontSize: 36, color: metricColor(key, value) }}>
+                        {value}
+                      </p>
+                    </div>
+                  ))}
+
+                </div>
+              </div>
+            </div>
+
+          </div>
+        );
+      })()}
 
       {/* Summary grid */}
       {
@@ -515,38 +690,64 @@ export function ReportView({ report }: ReportViewProps) {
           <TabsTrigger value="others" className="text-xs">Others</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="performance" className="space-y-3 mt-4">
-          <CategoryHeader results={byCategory.performance} />
-          {byCategory.performance.length === 0 ? (
-            <EmptyState label="performance" />
-          ) : (
-            <PerformanceTabContent results={byCategory.performance} />
+        <div className="relative mt-4">
+          <div className={!isLoggedIn && isLoggedIn !== null ? "blur-md pointer-events-none select-none" : ""}>
+            <TabsContent value="performance" className="space-y-3">
+              <CategoryHeader results={byCategory.performance} />
+              {byCategory.performance.length === 0 ? (
+                <EmptyState label="performance" />
+              ) : (
+                <PerformanceTabContent results={byCategory.performance} />
+              )}
+            </TabsContent>
+
+            <TabsContent value="broken_links" className="space-y-3">
+              <CategoryHeader results={byCategory.broken_links} />
+              {byCategory.broken_links.length === 0 ? <EmptyState label="broken links" /> : byCategory.broken_links.map((r) => <ResultCard key={r.id} result={r} />)}
+            </TabsContent>
+
+            <TabsContent value="compatibility" className="space-y-3">
+              <CategoryHeader results={byCategory.compatibility} />
+              {byCategory.compatibility.length === 0 ? <EmptyState label="cross-browser" /> : byCategory.compatibility.map((r) => <ResultCard key={r.id} result={r} />)}
+            </TabsContent>
+
+            <TabsContent value="security" className="space-y-3">
+              <CategoryHeader results={byCategory.security} />
+              {byCategory.security.length === 0 ? <EmptyState label="security" /> : byCategory.security.map((r) => <ResultCard key={r.id} result={r} />)}
+            </TabsContent>
+
+            <TabsContent value="others" className="space-y-3">
+              <CategoryHeader results={byCategory.others} />
+              {byCategory.others.length === 0 ? (
+                <EmptyState label="other checks (SEO, Accessibility, Responsive, Visual)" />
+              ) : (
+                <OthersTabContent results={byCategory.others} />
+              )}
+            </TabsContent>
+          </div>
+
+          {!isLoggedIn && isLoggedIn !== null && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/10 dark:bg-black/10 backdrop-blur-[2px] z-10 rounded-xl border border-dashed border-slate-300 dark:border-slate-800">
+              <div className="bg-white dark:bg-slate-950 p-4 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 text-center max-w-sm mx-4">
+                {/* <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-4"> */}
+                {/* <Shield className="h-8 w-8 text-blue-600 dark:text-blue-400" /> */}
+                {/* </div> */}
+                {/* <h3 className="text-xl font-bold mb-2">Detailed Results Locked</h3> */}
+                <p className="text-sm text-muted-foreground mb-6">
+                  Sign in to your account to view full audit details.
+                </p>
+                <div className="flex flex-col gap-1">
+                  <Button onClick={() => window.location.href = "/login"} className="w-full bg-blue-600 hover:bg-blue-700">
+                    Sign In
+                  </Button>
+                  <Button variant="ghost" onClick={() => window.location.href = "/register"} className="w-full">
+                    Create Free Account
+                  </Button>
+                </div>
+              </div>
+            </div>
           )}
-        </TabsContent>
-
-        <TabsContent value="broken_links" className="space-y-3 mt-4">
-          <CategoryHeader results={byCategory.broken_links} />
-          {byCategory.broken_links.length === 0 ? <EmptyState label="broken links" /> : byCategory.broken_links.map((r) => <ResultCard key={r.id} result={r} />)}
-        </TabsContent>
-
-        <TabsContent value="compatibility" className="space-y-3 mt-4">
-          <CategoryHeader results={byCategory.compatibility} />
-          {byCategory.compatibility.length === 0 ? <EmptyState label="cross-browser" /> : byCategory.compatibility.map((r) => <ResultCard key={r.id} result={r} />)}
-        </TabsContent>
-
-        <TabsContent value="security" className="space-y-3 mt-4">
-          <CategoryHeader results={byCategory.security} />
-          {byCategory.security.length === 0 ? <EmptyState label="security" /> : byCategory.security.map((r) => <ResultCard key={r.id} result={r} />)}
-        </TabsContent>
-
-        <TabsContent value="others" className="space-y-3 mt-4">
-          <CategoryHeader results={byCategory.others} />
-          {byCategory.others.length === 0 ? (
-            <EmptyState label="other checks (SEO, Accessibility, Responsive, Visual)" />
-          ) : (
-            <OthersTabContent results={byCategory.others} />
-          )}
-        </TabsContent>
+        </div>
       </Tabs>
     </div >
   );
@@ -734,10 +935,12 @@ function OthersTabContent({ results }: { results: TestResult[] }) {
   };
 
   const bySubCategory = {
-    seo: results.filter(r => r.category === "seo"),
-    quality: results.filter(r => r.category === "quality"),
-    accessibility: results.filter(r => r.category === "others" && !r.check_name.includes("Screenshot")),
-    visual: results.filter(r => r.category === "others" && r.check_name.includes("Screenshot")),
+    seo: results.filter((r: TestResult) => categorizeResult(r) === "seo" || r.category === "seo"),
+    quality: results.filter((r: TestResult) => r.category === "quality"),
+    accessibility: results.filter((r: TestResult) => categorizeResult(r) === "accessibility"),
+    responsive: results.filter((r: TestResult) => categorizeResult(r) === "responsive"),
+    visual: results.filter((r: TestResult) => categorizeResult(r) === "visual"),
+    other: results.filter((r: TestResult) => categorizeResult(r) === "other"),
   };
 
   return (
@@ -786,15 +989,15 @@ function OthersTabContent({ results }: { results: TestResult[] }) {
       )}
 
       {/* Responsive Section */}
-      {bySubCategory.responsive?.length > 0 && (
+      {bySubCategory.responsive.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center gap-2 pb-2 border-b">
             <h3 className="text-sm font-semibold text-primary">📱 Responsive Design Checks</h3>
             <span className="text-xs text-muted-foreground">
-              ({bySubCategory.responsive?.filter(r => r.status === "pass").length}/{bySubCategory.responsive?.length} passed)
+              ({bySubCategory.responsive.filter((r: TestResult) => r.status === "pass").length}/{bySubCategory.responsive.length} passed)
             </span>
           </div>
-          {bySubCategory.responsive?.map((r) => <ResultCard key={r.id} result={r} />)}
+          {bySubCategory.responsive.map((r: TestResult) => <ResultCard key={r.id} result={r} />)}
         </div>
       )}
 

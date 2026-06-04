@@ -33,7 +33,7 @@ export default async function DashboardPage() {
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar userEmail={user.email} isAdmin={isAdmin} />
-      <DashboardContent testRuns={testRuns} />
+      <DashboardContent testRuns={testRuns} userEmail={user.email} />
     </div>
   );
 }

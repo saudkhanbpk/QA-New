@@ -44,27 +44,21 @@ export function Navbar({ userEmail, isAdmin }: NavbarProps) {
             <>
               <Link href="/dashboard">
                 <Button variant="ghost" size="sm" className="gap-1 shrink-0">
-                  <LayoutDashboard className="h-4 w-4" />
-                  <span className="hidden md:inline">Dashboard</span>
+                  <LayoutDashboard className=" text-whiteh-4 w-4" />
+                  <span className="hidden text-white md:inline hover:bg-blue-300">Dashboard</span>
                 </Button>
               </Link>
               {isAdmin && (
                 <Link href="/admin">
                   <Button variant="ghost" size="sm" className="gap-1 shrink-0">
                     <Shield className="h-4 w-4" />
-                    <span className="hidden md:inline">Admin</span>
+                    <span className="hidden text-white md:inline">Admin</span>
                   </Button>
                 </Link>
               )}
-              <Link href="/test/new">
-                <Button size="sm" className="gap-1 shrink-0">
-                  <Plus className="h-4 w-4" />
-                  <span className="hidden sm:inline">New Test</span>
-                </Button>
-              </Link>
               <Button variant="ghost" size="sm" onClick={handleSignOut} className="gap-1 shrink-0">
-                <LogOut className="h-4 w-4" />
-                <span className="hidden sm:inline">Sign out</span>
+                <LogOut className="h-4 w-4" text-white />
+                <span className="hidden text-white sm:inline">Sign out</span>
               </Button>
             </>
           ) : (
