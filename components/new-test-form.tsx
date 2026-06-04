@@ -279,7 +279,7 @@ export function NewTestForm({ prefillUrl, testRunId }: { prefillUrl?: string; te
   const getsrc = (report: TestReport | null) => {
     const ScreenShot = report?.screenshots.find(s => s.viewport === "desktop");
     const imageurl = ScreenShot?.image_url;
-    return imageurl || null;
+    return imageurl || undefined;
   };
 
   // ── 1. LOADING / RESULTS STATE ───────────────────────────────────────────────
@@ -288,16 +288,16 @@ export function NewTestForm({ prefillUrl, testRunId }: { prefillUrl?: string; te
       <div className="w-full md:px-10 mx-auto space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
 
         {/* Header */}
-       {!showReport && (
-  <div className="space-y-2 border-b border-slate-300 pb-8">
-    <h1 className="text-3xl md:text-4xl font-bold text-[#3388cc] flex items-center gap-3">
-      Analyzing your URL...
-    </h1>
-    <p className="text-xl md:text-2xl font-semibold text-gray-500 truncate max-w-4xl">
-      {url || urls.split('\n')[0]}
-    </p>
-  </div>
-)}
+        {!showReport && (
+          <div className="space-y-2 border-b border-slate-300 pb-8">
+            <h1 className="text-3xl md:text-4xl font-bold text-[#3388cc] flex items-center gap-3">
+              Analyzing your URL...
+            </h1>
+            <p className="text-xl md:text-2xl font-semibold text-gray-500 truncate max-w-4xl">
+              {url || urls.split('\n')[0]}
+            </p>
+          </div>
+        )}
 
         {/* 2-Column: Device + Steps */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-start">
@@ -309,7 +309,7 @@ export function NewTestForm({ prefillUrl, testRunId }: { prefillUrl?: string; te
 
                 {/* ── DESKTOP ── */}
                 {liveViewport === "desktop" && (
-                  <div className="w-full animate-in fade-in zoom-in duration-500">
+                  <div className={`${showReport ? 'w-[80%]' : 'w-full'} transition-all duration-1000 animate-in fade-in zoom-in duration-500`}>
                     <div className="bg-[#1e1e1e] border border-[#3a3a3a] border-b-0 rounded-t-xl px-4 h-8 flex items-center gap-2">
                       <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
                       <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
@@ -436,15 +436,15 @@ export function NewTestForm({ prefillUrl, testRunId }: { prefillUrl?: string; te
             {!showReport ? (
               <div className="space-y-3">
                 {[
-                  { label: "Adding job to queue",          icon: "🗂️", minPrg: 0,  maxPrg: 20  },
-                  { label: "Starting browser instance",    icon: "🌐", minPrg: 20, maxPrg: 40  },
-                  { label: "Auditing performance metrics", icon: "⚡", minPrg: 40, maxPrg: 65  },
-                  { label: "Technical QA & Security scan", icon: "🔒", minPrg: 65, maxPrg: 90  },
-                  { label: "Generating final report",      icon: "📊", minPrg: 90, maxPrg: 100 },
+                  { label: "Adding job to queue", icon: "🗂️", minPrg: 0, maxPrg: 20 },
+                  { label: "Starting browser instance", icon: "🌐", minPrg: 20, maxPrg: 40 },
+                  { label: "Auditing performance metrics", icon: "⚡", minPrg: 40, maxPrg: 65 },
+                  { label: "Technical QA & Security scan", icon: "🔒", minPrg: 65, maxPrg: 90 },
+                  { label: "Generating final report", icon: "📊", minPrg: 90, maxPrg: 100 },
                 ].map((step, i) => {
                   const stepPrg = Math.min(100, Math.max(0, ((progress - step.minPrg) / (step.maxPrg - step.minPrg)) * 100));
                   const isActive = progress >= step.minPrg && progress < step.maxPrg;
-                  const isDone   = progress >= step.maxPrg;
+                  const isDone = progress >= step.maxPrg;
                   if (isActive) return (
                     <div key={i} className="flex items-center gap-3 px-4 py-3 rounded-xl border border-blue-200 bg-blue-50 shadow-sm">
                       <div className="h-7 w-7 rounded-full bg-blue-100 flex items-center justify-center shrink-0">

@@ -3,12 +3,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Globe, Monitor, Zap, ChevronDown, Settings2, Play } from "lucide-react";
+import { ChevronDown, Layers } from "lucide-react";
 
-export function SingleTestForm() {
+export function BulkTestForm() {
     const router = useRouter();
-    const [url, setUrl] = useState("");
+    const [urls, setUrls] = useState("");
     const [loading, setLoading] = useState(false);
 
     // Options state
@@ -38,26 +37,35 @@ export function SingleTestForm() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!url.trim()) return;
+        const urlList = urls.split('\n').map(u => u.trim()).filter(u => u.length > 0);
+        if (urlList.length === 0) return;
 
         setLoading(true);
         try {
-            const response = await fetch("/api/test/run", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    url: url.trim(),
-                    viewports: ["desktop", "mobile"], // Defaults
-                    checks: checks
-                }),
-            });
+            // Use a unique batch ID
+            const batchId = crypto.randomUUID();
+            const batchName = `Bulk Test - ${new Date().toLocaleString()}`;
 
-            const data = await response.json();
-            if (data.testRunId) {
-                router.push(`/test/new?id=${data.testRunId}&url=${encodeURIComponent(url.trim())}`);
-            }
+            const submissions = await Promise.allSettled(
+                urlList.map(async (testUrl) => {
+                    return fetch("/api/test/run", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            url: testUrl,
+                            viewports: ["desktop", "mobile"],
+                            checks: checks,
+                            batchId,
+                            batchName
+                        }),
+                    }).then(res => res.json());
+                })
+            );
+
+            // Redirect to batch page
+            router.push(`/test/batch/${batchId}`);
         } catch (error) {
-            console.error("Failed to start test:", error);
+            console.error("Failed to start bulk test:", error);
         } finally {
             setLoading(false);
         }
@@ -67,40 +75,31 @@ export function SingleTestForm() {
         <div className="bg-white border rounded-lg shadow-sm overflow-hidden mb-10">
             <div className="p-6 space-y-6">
                 <form onSubmit={handleSubmit} className="space-y-4">
-                    {/* URL Row */}
-                    <div className="flex gap-0 relative">
-                        <Input
-                            type="url"
-                            placeholder="Enter URL to Analyze..."
-                            value={url}
-                            onChange={(e) => setUrl(e.target.value)}
+                    {/* URL Rows */}
+                    <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-900 uppercase tracking-wider">Enter URLs (One per line)</label>
+                        <textarea
+                            placeholder="https://example.com&#10;https://mysite.com/about"
+                            value={urls}
+                            onChange={(e) => setUrls(e.target.value)}
                             required
                             disabled={loading}
-                            className="h-12 border-slate-300 rounded-r-none focus:ring-0 focus:z-10 text-base"
+                            rows={6}
+                            className="w-full p-4 border border-slate-300 rounded-md focus:ring-1 focus:ring-[#004a6b] focus:border-[#004a6b] transition-all text-base font-mono bg-slate-50/50"
                         />
-                        <Button
-                            type="submit"
-                            disabled={loading}
-                            className="h-12 px-8 bg-[#004a6b] hover:bg-[#003a55] text-white font-bold rounded-l-none rounded-r-none border-l-0"
-                        >
-                            {loading ? "Analyzing..." : "Analyze"}
-                        </Button>
-                        <Button
-                            type="button"
-                            variant="outline"
-                            className="h-12 px-3 border-l-0 rounded-l-none bg-[#004a6b] text-white border-[#004a6b] hover:bg-[#003a55] hover:text-white"
-                        >
-                            <ChevronDown className="h-4 w-4" />
-                        </Button>
+                        <div className="flex justify-between items-center text-[11px] text-slate-500 font-medium px-1">
+                            <span>Maximum 20 URLs allowed in bulk mode</span>
+                            <span>{urls.split('\n').filter(u => u.trim()).length} URLs entered</span>
+                        </div>
                     </div>
 
                     {/* Options Row */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
                         <div className="space-y-1.5 text-slate-900">
                             <label className="text-xs font-bold flex items-center gap-1">
                                 Location <span className="text-slate-300">?</span>
                             </label>
-                            <div className="flex items-center justify-between gap-2 border border-slate-300 rounded px-3 py-2 text-sm bg-white cursor-pointer hover:border-slate-400 transition-colors">
+                            <div className="flex items-center justify-between gap-2 border border-slate-300 rounded px-3 py-2 text-sm bg-white cursor-not-allowed opacity-70">
                                 <span className="truncate">{location}</span>
                                 <ChevronDown className="h-3 w-3 opacity-50" />
                             </div>
@@ -110,9 +109,9 @@ export function SingleTestForm() {
                             <label className="text-xs font-bold flex items-center gap-1 text-slate-900">
                                 Device/Browser <span className="text-slate-300">?</span>
                             </label>
-                            <div className="flex items-center justify-between gap-2 border border-slate-300 rounded px-3 py-2 text-sm bg-white cursor-pointer hover:border-slate-400 transition-colors text-slate-900">
+                            <div className="flex items-center justify-between gap-2 border border-slate-300 rounded px-3 py-2 text-sm bg-white cursor-not-allowed opacity-70">
                                 <span className="truncate">{browser}</span>
-                                <ChevronDown className="h-3 w-3 opacity-50 text-slate-900" />
+                                <ChevronDown className="h-3 w-3 opacity-50 " />
                             </div>
                         </div>
 
@@ -120,28 +119,11 @@ export function SingleTestForm() {
                             <label className="text-xs font-bold flex items-center gap-1 text-slate-900">
                                 Connection Speed <span className="text-slate-300">?</span>
                             </label>
-                            <div className="flex items-center justify-between gap-2 border border-slate-300 rounded px-3 py-2 text-sm bg-white cursor-pointer hover:border-slate-400 transition-colors text-slate-900">
+                            <div className="flex items-center justify-between gap-2 border border-slate-300 rounded px-3 py-2 text-sm bg-white cursor-not-allowed opacity-70">
                                 <span className="truncate">{connection}</span>
                                 <ChevronDown className="h-3 w-3 opacity-50" />
                             </div>
                         </div>
-                    </div>
-
-                    {/* Status Line */}
-                    <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-medium text-slate-500 pt-2">
-                        <span className="font-bold uppercase tracking-wider text-slate-600">Using:</span>
-                        <span className="font-bold text-[#004a6b]">{browser}</span>
-                        <span>in</span>
-                        <span className="font-bold text-[#004a6b]">{location}</span>
-                        <span className="mx-1 text-slate-300">|</span>
-                        <span className="font-bold uppercase tracking-wider text-slate-600">Connection:</span>
-                        <span className="font-bold">Off</span>
-                        <span className="mx-1 text-slate-300">|</span>
-                        <span className="font-bold uppercase tracking-wider text-slate-600">Video:</span>
-                        <span className="font-bold">Off</span>
-                        <span className="mx-1 text-slate-300">|</span>
-                        <span className="font-bold uppercase tracking-wider text-slate-600">Adblock:</span>
-                        <span className="font-bold">Off</span>
                     </div>
 
                     {/* Collapsible Checks */}
@@ -154,8 +136,8 @@ export function SingleTestForm() {
                                         key={check.id}
                                         onClick={() => toggleCheck(check.id)}
                                         className={`cursor-pointer p-3 rounded-lg border transition-all flex flex-col gap-1 ${checks[check.id]
-                                            ? "bg-blue-50 border-blue-200 ring-1 ring-blue-200"
-                                            : "bg-white border-slate-200 hover:border-slate-300"
+                                                ? "bg-blue-50 border-blue-200 ring-1 ring-blue-200"
+                                                : "bg-white border-slate-200 hover:border-slate-300"
                                             }`}
                                     >
                                         <div className="flex items-center justify-between">
@@ -174,6 +156,23 @@ export function SingleTestForm() {
                             </div>
                         </div>
                     )}
+
+                    <div className="pt-4 flex justify-center">
+                        <Button
+                            type="submit"
+                            disabled={loading || !urls.trim()}
+                            className="h-12 px-12 bg-[#004a6b] hover:bg-[#003a55] text-white font-bold rounded-md shadow-lg shadow-blue-900/10 transition-all flex items-center gap-2"
+                        >
+                            {loading ? (
+                                <>Starting Bulk Analysis...</>
+                            ) : (
+                                <>
+                                    <Layers className="h-4 w-4" />
+                                    Run Bulk Performance Test
+                                </>
+                            )}
+                        </Button>
+                    </div>
                 </form>
             </div>
 
@@ -187,7 +186,7 @@ export function SingleTestForm() {
                         }`}
                 >
                     <ChevronDown className={`h-3 w-3 transition-transform duration-300 ${showOptions ? "rotate-180" : ""}`} />
-                    Analysis Options
+                    Bulk Options
                 </Button>
             </div>
         </div>

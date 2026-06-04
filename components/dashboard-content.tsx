@@ -26,9 +26,11 @@ interface DashboardContentProps {
 
 import { DashboardBanner } from "@/components/dashboard-banner";
 import { SingleTestForm } from "@/components/single-test-form";
+import { BulkTestForm } from "@/components/bulk-test-form";
 
 export function DashboardContent({ testRuns, userEmail }: DashboardContentProps) {
   const [currentPage, setCurrentPage] = useState(1);
+  const [testMode, setTestMode] = useState<"single" | "bulk">("single");
   const itemsPerPage = 10;
 
   // Group tests by batch_id
@@ -107,19 +109,22 @@ export function DashboardContent({ testRuns, userEmail }: DashboardContentProps)
         <h1 className="text-4xl font-bold text-[#3388cc] mb-2 font-mono">Dashboard</h1>
         <div className="flex items-center justify-between border-b pb-2">
           <h2 className="text-xl font-medium text-slate-700 flex items-center gap-2">
-            Single Performance Test
+            {testMode === "single" ? "Single Performance Test" : "Bulk Performance Test"}
           </h2>
           <div className="flex items-center gap-4 text-sm">
             <button className="text-blue-600 hover:underline">View Bulk Test History</button>
-            <button className="bg-slate-500 text-white px-3 py-1 rounded text-xs font-bold flex items-center gap-1 group">
-              Switch to Bulk Tests
-              <ChevronRight className="h-3 w-3" />
+            <button
+              onClick={() => setTestMode(testMode === "single" ? "bulk" : "single")}
+              className="bg-slate-500 text-white px-3 py-1 rounded text-xs font-bold flex items-center gap-1 group hover:bg-slate-600 transition-colors"
+            >
+              {testMode === "single" ? "Switch to Bulk Tests" : "Switch to Single Test"}
+              <ChevronRight className={`h-3 w-3 transition-transform ${testMode === "bulk" ? "rotate-90" : ""}`} />
             </button>
           </div>
         </div>
       </div>
 
-      <SingleTestForm />
+      {testMode === "single" ? <SingleTestForm /> : <BulkTestForm />}
 
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div className="min-w-0">
