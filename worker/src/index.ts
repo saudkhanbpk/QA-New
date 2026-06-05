@@ -28,6 +28,8 @@ interface TestResultInsert {
   message: string;
   fix_recommendation: string;
   screenshot_url: string | null;
+  page_size?: [{ total_size: number; html_size: number; image_size: number; js_size: number; css_size: number; font_size: number }];
+  page_request_size?: [{ total_requests: number; image_requests: number; js_requests: number; other_requests: number; css_requests: number; font_requests: number, image_percent: number; js_percent: number; css_percent: number; font_percent: number; other_percent: number }];
 }
 
 const VIEWPORT_SIZES: Record<Viewport, { width: number; height: number }> = {
@@ -326,6 +328,282 @@ async function runTests(
       }
     }
   }
+
+
+  //---Checking The Files Sizes (Total page size: images, js, font, css)
+  let browser;
+  try {
+    const { chromium } = await import("playwright");
+    browser = await chromium.launch({
+      headless: true,
+    });
+
+    const context = await browser.newContext({
+      viewport: {
+        width: 1280,
+        height: 800,
+      },
+    });
+
+    const page = await context.newPage();
+
+    await page.goto(url, {
+      waitUntil: "domcontentloaded",
+      timeout: 30000,
+    });
+
+    await Promise.race([
+      page.waitForFunction(
+        () => document.readyState === "complete"
+      ),
+      page.waitForTimeout(10000),
+    ]);
+
+    await page.waitForTimeout(2000);
+
+    const fsMetrics = await page.evaluate(() => {
+      const resources =
+        performance.getEntriesByType(
+          "resource"
+        ) as PerformanceResourceTiming[];
+
+      const navigation =
+        performance.getEntriesByType(
+          "navigation"
+        )[0] as PerformanceNavigationTiming | undefined;
+
+      const getSize = (
+        entry:
+          | PerformanceResourceTiming
+          | PerformanceNavigationTiming
+          | undefined
+      ) => {
+        if (!entry) return 0;
+
+        return (
+          entry.transferSize ||
+          entry.encodedBodySize ||
+          entry.decodedBodySize ||
+          0
+        );
+      };
+
+      const toKB = (bytes: number) =>
+        Math.round(bytes / 1024);
+
+      const documentSize = getSize(navigation);
+
+      const imageResources = resources.filter(
+        r =>
+          r.initiatorType === "img" ||
+          /\.(png|jpg|jpeg|gif|svg|webp|avif)(\?|$)/i.test(
+            r.name
+          )
+      );
+
+      const jsResources = resources.filter(
+        r =>
+          r.initiatorType === "script" ||
+          /\.js(\?|$)/i.test(r.name)
+      );
+
+      const cssResources = resources.filter(
+        r =>
+          /\.css(\?|$)/i.test(r.name)
+      );
+
+      const fontResources = resources.filter(
+        r =>
+          r.initiatorType === "font" ||
+          /\.(woff|woff2|ttf|otf|eot)(\?|$)/i.test(
+            r.name
+          )
+      );
+
+      const imageSize = imageResources.reduce(
+        (sum, r) => sum + getSize(r),
+        0
+      );
+
+      const jsSize = jsResources.reduce(
+        (sum, r) => sum + getSize(r),
+        0
+      );
+
+      const cssSize = cssResources.reduce(
+        (sum, r) => sum + getSize(r),
+        0
+      );
+
+      const fontSize = fontResources.reduce(
+        (sum, r) => sum + getSize(r),
+        0
+      );
+
+      const totalResourceSize = resources.reduce(
+        (sum, r) => sum + getSize(r),
+        0
+      );
+
+      const totalPageSize =
+        documentSize + totalResourceSize;
+
+      const imageRequests =
+        imageResources.length;
+
+      const jsRequests =
+        jsResources.length;
+
+      const cssRequests =
+        cssResources.length;
+
+      const fontRequests =
+        fontResources.length;
+
+      const totalRequests =
+        resources.length + (navigation ? 1 : 0);
+
+      const otherRequests = Math.max(
+        0,
+        totalRequests -
+        imageRequests -
+        jsRequests -
+        cssRequests -
+        fontRequests
+      );
+
+      const percent = (
+        value: number,
+        total: number
+      ) =>
+        total > 0
+          ? Number(
+            ((value / total) * 100).toFixed(1)
+          )
+          : 0;
+
+      return {
+        totalKB: toKB(totalPageSize),
+        htmlKB: toKB(documentSize),
+        imageKB: toKB(imageSize),
+        jsKB: toKB(jsSize),
+        cssKB: toKB(cssSize),
+        fontKB: toKB(fontSize),
+
+        totalRequests,
+        imageRequests,
+        jsRequests,
+        cssRequests,
+        fontRequests,
+        otherRequests,
+
+        imagePercent: percent(
+          imageRequests,
+          totalRequests
+        ),
+        jsPercent: percent(
+          jsRequests,
+          totalRequests
+        ),
+        cssPercent: percent(
+          cssRequests,
+          totalRequests
+        ),
+        fontPercent: percent(
+          fontRequests,
+          totalRequests
+        ),
+        otherPercent: percent(
+          otherRequests,
+          totalRequests
+        ),
+      };
+    });
+
+    await browser.close();
+
+    // PAGE SIZE RESULT
+
+    results.push({
+      test_run_id: testRunId,
+      category: "performance",
+      check_name: "Page Size Breakdown",
+      status: "pass",
+      severity: "low",
+
+      message:
+        `Total: ${fsMetrics.totalKB}KB | ` +
+        `HTML: ${fsMetrics.htmlKB}KB | ` +
+        `Images: ${fsMetrics.imageKB}KB | ` +
+        `JS: ${fsMetrics.jsKB}KB | ` +
+        `CSS: ${fsMetrics.cssKB}KB | ` +
+        `Fonts: ${fsMetrics.fontKB}KB`,
+
+      fix_recommendation:
+        "Optimize images, fonts, JS and CSS. Use compression, caching, lazy loading and code splitting.",
+
+      screenshot_url: null,
+
+      page_size: [{
+        total_size: fsMetrics.totalKB,
+        html_size: fsMetrics.htmlKB,
+        image_size: fsMetrics.imageKB,
+        js_size: fsMetrics.jsKB,
+        css_size: fsMetrics.cssKB,
+        font_size: fsMetrics.fontKB,
+      }],
+    });
+
+    // REQUEST BREAKDOWN RESULT
+
+    results.push({
+      test_run_id: testRunId,
+      category: "performance",
+      check_name: "Page Request Breakdown",
+      status: "pass",
+      severity: "low",
+
+      message:
+        `Total Requests: ${fsMetrics.totalRequests} | ` +
+        `IMG: ${fsMetrics.imagePercent}% | ` +
+        `JS: ${fsMetrics.jsPercent}% | ` +
+        `CSS: ${fsMetrics.cssPercent}% | ` +
+        `Fonts: ${fsMetrics.fontPercent}% | ` +
+        `Other: ${fsMetrics.otherPercent}%`,
+
+      fix_recommendation:
+        "Reduce request count through bundling, eliminating unused assets and lazy loading.",
+
+      screenshot_url: null,
+
+      page_request_size: [{
+        total_requests: fsMetrics.totalRequests,
+
+        image_requests: fsMetrics.imageRequests,
+        js_requests: fsMetrics.jsRequests,
+        css_requests: fsMetrics.cssRequests,
+        font_requests: fsMetrics.fontRequests,
+        other_requests: fsMetrics.otherRequests,
+
+        image_percent: fsMetrics.imagePercent,
+        js_percent: fsMetrics.jsPercent,
+        css_percent: fsMetrics.cssPercent,
+        font_percent: fsMetrics.fontPercent,
+        other_percent: fsMetrics.otherPercent,
+      }],
+    });
+
+  } catch (err) {
+    console.error(
+      "File size analysis failed:",
+      err
+    );
+  } finally {
+    if (browser) {
+      await browser.close().catch(() => { });
+    }
+  }
+
 
   // ── PERFORMANCE via Lighthouse ──────────────────────
   if (checks.performance) {

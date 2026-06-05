@@ -47,7 +47,7 @@ export function SingleTestForm() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     url: url.trim(),
-                    viewports: ["desktop", "mobile"], // Defaults
+                    viewports: ["desktop", "tablet", "mobile"], // Defaults
                     checks: checks
                 }),
             });
@@ -83,7 +83,7 @@ export function SingleTestForm() {
                             disabled={loading}
                             className="h-12 px-8 bg-[#004a6b] hover:bg-[#003a55] text-white font-bold rounded-l-none rounded-r-none border-l-0"
                         >
-                            {loading ? "Analyzing..." : "Analyze"}
+                            {loading ? "Starting Test..." : "Analyze"}
                         </Button>
                         <Button
                             type="button"

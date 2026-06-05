@@ -41,6 +41,29 @@ export interface TestBatch {
   average_score: number | null;
 }
 
+export interface PageSize {
+  total_size: number;
+  html_size: number;
+  image_size: number;
+  js_size: number;
+  css_size: number;
+  font_size: number;
+}
+
+export interface PageRequestSize {
+  total_requests: number;
+  image_requests: number;
+  js_requests: number;
+  other_requests: number;
+  css_requests: number;
+  font_requests: number;
+  image_percent: number;
+  js_percent: number;
+  css_percent: number;
+  font_percent: number;
+  other_percent: number;
+}
+
 export interface TestResult {
   id: string;
   test_run_id: string;
@@ -53,6 +76,8 @@ export interface TestResult {
   screenshot_url: string | null;
   created_at: string;
   responsive: boolean;
+  page_size: PageSize[] | null;
+  page_request_size: PageRequestSize[] | null;
 }
 
 export interface Screenshot {

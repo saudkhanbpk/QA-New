@@ -53,7 +53,7 @@ export function BulkTestForm() {
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
                             url: testUrl,
-                            viewports: ["desktop", "mobile"],
+                            viewports: ["desktop", "tablet", "mobile"],
                             checks: checks,
                             batchId,
                             batchName
@@ -136,8 +136,8 @@ export function BulkTestForm() {
                                         key={check.id}
                                         onClick={() => toggleCheck(check.id)}
                                         className={`cursor-pointer p-3 rounded-lg border transition-all flex flex-col gap-1 ${checks[check.id]
-                                                ? "bg-blue-50 border-blue-200 ring-1 ring-blue-200"
-                                                : "bg-white border-slate-200 hover:border-slate-300"
+                                            ? "bg-blue-50 border-blue-200 ring-1 ring-blue-200"
+                                            : "bg-white border-slate-200 hover:border-slate-300"
                                             }`}
                                     >
                                         <div className="flex items-center justify-between">

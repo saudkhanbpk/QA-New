@@ -11,7 +11,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { CheckCircle2, XCircle, AlertTriangle, Download, Globe, Clock, Monitor, Smartphone, Tablet, Wrench, RefreshCw, ListTodo, FileSearch, HelpCircle, Shield, ChevronDown, Layers, Info, Square } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import type { TestReport, TestResult, Severity, ResultStatus, Category } from "@/types";
+import type { TestReport, TestResult, Severity, ResultStatus, Category, PageSize } from "@/types";
 interface ReportViewProps { report: TestReport; }
 
 export function ReportView({ report }: ReportViewProps) {
@@ -20,7 +20,7 @@ export function ReportView({ report }: ReportViewProps) {
   const totalWarnings = results.filter((r) => r.status === "warning").length;
   const overallPass = totalFails === 0;
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
-
+  console.log("Report :", report)
   useEffect(() => {
     async function checkUser() {
       const supabase = createClient();
@@ -39,6 +39,7 @@ export function ReportView({ report }: ReportViewProps) {
     quality: results.filter((r) => r.category === "quality"),
     others: results.filter((r) => r.category === "others"),
   };
+
 
   const priorityFixes = results
     .filter(r => r.status !== "pass" && (r.severity === "critical" || r.severity === "medium"))
@@ -833,6 +834,11 @@ function EmptyState({ label }: { label: string }) {
 function SummaryTabContent({ report }: { report: TestReport }) {
   const { results, screenshots, run } = report;
   const [activeIssueFilter, setActiveIssueFilter] = useState('All');
+  const performance = results.filter((r) => r.category === "performance");
+  const pagesize = performance.filter((r) => r.check_name === "Page Size Breakdown");
+  console.log("Page Size Breakdown :", pagesize)
+  const requests = performance.filter((r) => r.check_name === "Page Request Breakdown");
+  console.log("Requests Breakdown :", requests)
 
   // Extract metrics
   const getMetric = (name: string) => {
@@ -1034,60 +1040,66 @@ function SummaryTabContent({ report }: { report: TestReport }) {
           </p>
 
           <div className="space-y-1">
-            {results
-              .filter(r => {
-                const matchesCategory = r.status !== 'pass' && (r.category === 'performance' || r.category === 'quality');
-                if (!matchesCategory) return false;
-                if (activeIssueFilter === 'All') return true;
-                // Robust matching for abbreviations
-                const cn = r.check_name.toLowerCase();
-                const f = activeIssueFilter.toLowerCase();
-                return cn.includes(f) || (f === 'fcp' && cn.includes('contentful paint')) || (f === 'lcp' && cn.includes('largest contentful paint')) || (f === 'tbt' && cn.includes('blocking time')) || (f === 'cls' && cn.includes('layout shift'));
-              })
-              .slice(0, 6)
-              .map((issue, i) => (
-                <Accordion type="single" collapsible key={issue.id}>
-                  <AccordionItem value="item-1" className="border rounded-sm overflow-hidden bg-[#f9f9f9]">
-                    <AccordionTrigger className="hover:no-underline py-0 px-0 group">
-                      <div className="flex w-full items-stretch">
-                        <div className={`w-28 flex items-center justify-center text-[11px] font-bold text-white shrink-0 transition-colors ${issue.severity === 'critical' ? 'bg-[#e74c3c] group-hover:bg-[#d63031]' : 'bg-[#a3c24d] group-hover:bg-[#8da33f]'
-                          }`}>
-                          {issue.severity === 'critical' ? 'High' : 'Med-Low'}
-                        </div>
-                        <div className="flex-1 flex items-center justify-between px-4 py-3 bg-white group-hover:bg-slate-50 transition-colors border-l border-slate-100">
-                          <div className="flex flex-col items-start gap-1">
-                            <div className="font-semibold text-[#2d5d85] text-[13px]">{issue.check_name}</div>
-                            <div className="flex items-center gap-1.5">
-                              {issue.check_name.toLowerCase().includes("paint") && <span className="bg-slate-100 text-[9px] px-1 py-0.5 rounded text-slate-400 font-bold uppercase tracking-tight">FCP</span>}
-                              {issue.check_name.toLowerCase().includes("largest") && <span className="bg-slate-100 text-[9px] px-1 py-0.5 rounded text-slate-400 font-bold uppercase tracking-tight">LCP</span>}
-                              {issue.check_name.toLowerCase().includes("blocking") && <span className="bg-slate-100 text-[9px] px-1 py-0.5 rounded text-slate-400 font-bold uppercase tracking-tight">TBT</span>}
-                              {issue.check_name.toLowerCase().includes("shift") && <span className="bg-slate-100 text-[9px] px-1 py-0.5 rounded text-slate-400 font-bold uppercase tracking-tight">CLS</span>}
-                              {issue.check_name.toLowerCase().includes("interactive") && <span className="bg-slate-100 text-[9px] px-1 py-0.5 rounded text-slate-400 font-bold uppercase tracking-tight">TTI</span>}
+            {!results ? (
+              <p className="text-xs text-slate-500">
+                No issues found
+              </p>
+            ) : (
+              results
+                .filter(r => {
+                  const matchesCategory = r.status !== 'pass' && (r.category === 'performance' || r.category === 'quality');
+                  if (!matchesCategory) return false;
+                  if (activeIssueFilter === 'All') return true;
+                  // Robust matching for abbreviations
+                  const cn = r.check_name.toLowerCase();
+                  const f = activeIssueFilter.toLowerCase();
+                  return cn.includes(f) || (f === 'fcp' && cn.includes('contentful paint')) || (f === 'lcp' && cn.includes('largest contentful paint')) || (f === 'tbt' && cn.includes('blocking time')) || (f === 'cls' && cn.includes('layout shift'));
+                })
+                .slice(0, 20)
+                .map((issue, i) => (
+                  <Accordion type="single" collapsible key={issue.id}>
+                    <AccordionItem value="item-1" className="border rounded-sm overflow-hidden bg-[#f9f9f9]">
+                      <AccordionTrigger className="hover:no-underline py-0 px-0 group">
+                        <div className="flex w-full items-stretch">
+                          <div className={`w-28 flex items-center justify-center text-[11px] font-bold text-white shrink-0 transition-colors ${issue.severity === 'critical' ? 'bg-[#e74c3c] group-hover:bg-[#d63031]' : 'bg-[#a3c24d] group-hover:bg-[#8da33f]'
+                            }`}>
+                            {issue.severity === 'critical' ? 'High' : 'Med-Low'}
+                          </div>
+                          <div className="flex-1 flex items-center justify-between px-4 py-3 bg-white group-hover:bg-slate-50 transition-colors border-l border-slate-100">
+                            <div className="flex flex-col items-start gap-1">
+                              <div className="font-semibold text-[#2d5d85] text-[13px]">{issue.check_name}</div>
+                              <div className="flex items-center gap-1.5">
+                                {issue.check_name.toLowerCase().includes("paint") && <span className="bg-slate-100 text-[9px] px-1 py-0.5 rounded text-slate-400 font-bold uppercase tracking-tight">FCP</span>}
+                                {issue.check_name.toLowerCase().includes("largest") && <span className="bg-slate-100 text-[9px] px-1 py-0.5 rounded text-slate-400 font-bold uppercase tracking-tight">LCP</span>}
+                                {issue.check_name.toLowerCase().includes("blocking") && <span className="bg-slate-100 text-[9px] px-1 py-0.5 rounded text-slate-400 font-bold uppercase tracking-tight">TBT</span>}
+                                {issue.check_name.toLowerCase().includes("shift") && <span className="bg-slate-100 text-[9px] px-1 py-0.5 rounded text-slate-400 font-bold uppercase tracking-tight">CLS</span>}
+                                {issue.check_name.toLowerCase().includes("interactive") && <span className="bg-slate-100 text-[9px] px-1 py-0.5 rounded text-slate-400 font-bold uppercase tracking-tight">TTI</span>}
+                              </div>
                             </div>
+                            <div className="text-xs text-slate-500 font-mono pr-4">{issue.message}</div>
                           </div>
-                          <div className="text-xs text-slate-500 font-mono pr-4">{issue.message}</div>
                         </div>
-                      </div>
-                    </AccordionTrigger>
-                    <AccordionContent className="p-6 bg-white border-t border-slate-100">
-                      <div className="space-y-4">
-                        <p className="text-sm text-slate-600 leading-relaxed italic">{issue.message}</p>
-                        {issue.fix_recommendation && (
-                          <div className="bg-blue-50 border-l-4 border-blue-400 p-4 text-xs text-blue-800 rounded-r shadow-sm">
-                            <span className="font-bold block mb-1 text-[10px] uppercase tracking-wider text-blue-600">How to Fix:</span>
-                            <p className="leading-normal">{issue.fix_recommendation}</p>
-                          </div>
-                        )}
-                        <div className="flex justify-end pt-2">
-                          <Button size="sm" className="bg-[#2d76b9] hover:bg-[#235e95] text-xs font-bold gap-2 rounded-sm px-4">
-                            Improve your site speed today
-                          </Button>
+                      </AccordionTrigger>
+                      <AccordionContent className="p-6 bg-white border-t border-slate-100">
+                        <div className="space-y-4">
+                          <p className="text-sm text-slate-600 leading-relaxed italic">{issue.message}</p>
+                          {issue.fix_recommendation && (
+                            <div className="bg-blue-50 border-l-4 border-blue-400 p-4 text-xs text-blue-800 rounded-r shadow-sm">
+                              <span className="font-bold block mb-1 text-[10px] uppercase tracking-wider text-blue-600">How to Fix:</span>
+                              <p className="leading-normal">{issue.fix_recommendation}</p>
+                            </div>
+                          )}
+                          {/* <div className="flex justify-end pt-2">
+                            <Button size="sm" className="bg-[#2d76b9] hover:bg-[#235e95] text-xs font-bold gap-2 rounded-sm px-4">
+                              Improve your site speed today
+                            </Button>
+                          </div> */}
                         </div>
-                      </div>
-                    </AccordionContent>
-                  </AccordionItem>
-                </Accordion>
-              ))}
+                      </AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
+                ))
+            )}
           </div>
 
           <p className="text-[11px] text-slate-400 pt-2">
@@ -1121,24 +1133,24 @@ function SummaryTabContent({ report }: { report: TestReport }) {
             {/* Page Size */}
             <div className="space-y-2">
               <div className="flex justify-between items-end">
-                <h3 className="text-sm font-bold text-slate-600">Total Page Size - 1.16MB</h3>
+                <h3 className="text-sm font-bold text-slate-600">Total Page Size - {pagesize[0]?.page_size?.[0]?.total_size ?? 0} KB</h3>
               </div>
               <div className="flex h-12 rounded-sm overflow-hidden shadow-sm">
                 <div className="bg-[#5c7a95] flex-1 flex flex-col items-center justify-center text-white border-r border-white/20">
                   <span className="text-[10px] font-bold">IMG</span>
-                  <span className="text-[9px] opacity-80">472KB</span>
+                  <span className="text-[9px] opacity-80">{pagesize[0]?.page_size?.[0]?.image_size ?? 0}KB</span>
                 </div>
                 <div className="bg-[#6b8ba4] flex-1 flex flex-col items-center justify-center text-white border-r border-white/20">
                   <span className="text-[10px] font-bold">JS</span>
-                  <span className="text-[9px] opacity-80">351KB</span>
+                  <span className="text-[9px] opacity-80">{pagesize[0]?.page_size?.[0]?.js_size ?? 0}KB</span>
                 </div>
                 <div className="bg-[#9b7e9b] w-20 flex flex-col items-center justify-center text-white border-r border-white/20">
                   <span className="text-[10px] font-bold">Font</span>
-                  <span className="text-[9px] opacity-80">199KB</span>
+                  <span className="text-[9px] opacity-80">{pagesize[0]?.page_size?.[0]?.font_size ?? 0}KB</span>
                 </div>
                 <div className="bg-[#9b99b6] w-16 flex flex-col items-center justify-center text-white">
                   <span className="text-[10px] font-bold">CSS</span>
-                  <span className="text-[9px] opacity-80">143KB</span>
+                  <span className="text-[9px] opacity-80">{pagesize[0]?.page_size?.[0]?.css_size ?? 0}KB</span>
                 </div>
               </div>
             </div>
@@ -1146,24 +1158,24 @@ function SummaryTabContent({ report }: { report: TestReport }) {
             {/* Page Requests */}
             <div className="space-y-2">
               <div className="flex justify-between items-end">
-                <h3 className="text-sm font-bold text-slate-600">Total Page Requests - 74</h3>
+                <h3 className="text-sm font-bold text-slate-600">Total Page Requests - {requests[0]?.page_request_size?.[0]?.total_requests ?? 0}</h3>
               </div>
               <div className="flex h-12 rounded-sm overflow-hidden shadow-sm">
                 <div className="bg-[#5c7a95] flex-1 flex flex-col items-center justify-center text-white border-r border-white/20">
                   <span className="text-[10px] font-bold">IMG</span>
-                  <span className="text-[9px] opacity-80">37.8%</span>
+                  <span className="text-[9px] opacity-80">{requests[0]?.page_request_size?.[0]?.image_percent ?? 0}%</span>
                 </div>
                 <div className="bg-[#6b8ba4] flex-1 flex flex-col items-center justify-center text-white border-r border-white/20">
                   <span className="text-[10px] font-bold">JS</span>
-                  <span className="text-[9px] opacity-80">25.7%</span>
+                  <span className="text-[9px] opacity-80">{requests[0]?.page_request_size?.[0]?.js_percent ?? 0}%</span>
                 </div>
                 <div className="bg-[#9b99b6] flex-1 flex flex-col items-center justify-center text-white border-r border-white/20">
                   <span className="text-[10px] font-bold">CSS</span>
-                  <span className="text-[9px] opacity-80">24.3%</span>
+                  <span className="text-[9px] opacity-80">{requests[0]?.page_request_size?.[0]?.css_percent ?? 0}%</span>
                 </div>
                 <div className="bg-[#b699b6] w-12 flex flex-col items-center justify-center text-white">
                   <span className="text-[10px] font-bold">Other</span>
-                  <span className="text-[9px] opacity-80">6.8%</span>
+                  <span className="text-[9px] opacity-80">{requests[0]?.page_request_size?.[0]?.other_percent ?? 0}%</span>
                 </div>
               </div>
             </div>
