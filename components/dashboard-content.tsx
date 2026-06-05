@@ -112,7 +112,7 @@ export function DashboardContent({ testRuns, userEmail }: DashboardContentProps)
             {testMode === "single" ? "Single Performance Test" : "Bulk Performance Test"}
           </h2>
           <div className="flex items-center gap-4 text-sm">
-            <button className="text-blue-600 hover:underline">View Bulk Test History</button>
+            {/* <button className="text-blue-600 hover:underline">View Bulk Test History</button> */}
             <button
               onClick={() => setTestMode(testMode === "single" ? "bulk" : "single")}
               className="bg-slate-500 text-white px-3 py-1 rounded text-xs font-bold flex items-center gap-1 group hover:bg-slate-600 transition-colors"

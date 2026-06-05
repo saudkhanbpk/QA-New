@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Navbar } from "@/components/navbar";
+import { isSuperAdmin } from "@/lib/auth-constants";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -24,9 +25,11 @@ export default async function HomePage() {
     recentRuns = data || [];
   }
 
+  const isAdmin = isSuperAdmin(user?.email);
+
   return (
     <div className="min-h-screen flex flex-col">
-      <Navbar userEmail={user?.email} />
+      <Navbar userEmail={user?.email} isAdmin={isAdmin} />
 
       {/* Hero */}
       <section className="flex-1 flex flex-col justify-center px-2 pl-2 md:pl-20 lg:pl-24 py-20 md:py-40 min-h-[calc(100vh-3.5rem)] md:min-h-[calc(100vh-5rem)]"

@@ -2,6 +2,7 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isSuperAdmin } from "@/lib/auth-constants";
 
 export const dynamic = "force-dynamic";
 import { Navbar } from "@/components/navbar";
@@ -21,10 +22,8 @@ export default async function TestReportPage({
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  // List of super admin email addresses
-  const SUPER_ADMINS = ["admin@autoqa.com"];
-  const userEmail = (user?.email || "").toLowerCase();
-  const isAdmin = user ? SUPER_ADMINS.some(admin => admin.toLowerCase() === userEmail) : false;
+  // Check if user is super admin using centralized logic
+  const isAdmin = isSuperAdmin(user?.email);
 
   // Use admin client for admins to bypass RLS, regular client for users
   const dbClient = isAdmin ? createAdminClient() : supabase;
@@ -71,8 +70,8 @@ export default async function TestReportPage({
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Navbar userEmail={user?.email} />
-      <main className="flex-1 container py-8 max-w-5xl">
+      <Navbar userEmail={user?.email} isAdmin={isAdmin} />
+      <main className="flex-1 container py-8 max-w-7xl">
         {/* Back Button */}
         <Link href={backUrl}>
           <Button variant="ghost" size="sm" className="gap-1 mb-6">

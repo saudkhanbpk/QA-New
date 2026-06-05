@@ -7,10 +7,7 @@ import { Navbar } from "@/components/navbar";
 import { DashboardContent } from "@/components/dashboard-content";
 import type { TestRun } from "@/types";
 
-// List of super admin email addresses
-const SUPER_ADMINS = [
-  "admin@autoqa.com",
-];
+import { isSuperAdmin } from "@/lib/auth-constants";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -18,9 +15,8 @@ export default async function DashboardPage() {
 
   if (!user) redirect("/login");
 
-  // Check if user is super admin (case-insensitive)
-  const userEmail = (user.email || "").toLowerCase();
-  const isAdmin = SUPER_ADMINS.some(admin => admin.toLowerCase() === userEmail);
+  // Check if user is super admin using centralized logic
+  const isAdmin = isSuperAdmin(user.email);
 
   const { data: runs } = await supabase
     .from("test_runs")

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { Navbar } from "@/components/navbar";
+import { isSuperAdmin } from "@/lib/auth-constants";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -23,10 +24,8 @@ export default async function BatchViewPage({ params }: PageProps) {
 
   if (!user) redirect("/login");
 
-  // List of super admin email addresses
-  const SUPER_ADMINS = ["admin@autoqa.com"];
-  const userEmail = (user.email || "").toLowerCase();
-  const isAdmin = SUPER_ADMINS.some(admin => admin.toLowerCase() === userEmail);
+  // Check if user is super admin using centralized logic
+  const isAdmin = isSuperAdmin(user.email);
 
   const batchId = params.id;
 
@@ -68,7 +67,7 @@ export default async function BatchViewPage({ params }: PageProps) {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Navbar userEmail={user.email} />
+      <Navbar userEmail={user.email} isAdmin={isAdmin} />
       <main className="flex-1 container py-8 max-w-6xl">
         {/* Back Button */}
         <Link href="/dashboard">

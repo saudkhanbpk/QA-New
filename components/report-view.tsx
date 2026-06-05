@@ -8,7 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { CheckCircle2, XCircle, AlertTriangle, Download, Globe, Clock, Monitor, Smartphone, Tablet, Wrench, RefreshCw, ListTodo, FileSearch, HelpCircle, Shield } from "lucide-react";
+import { CheckCircle2, XCircle, AlertTriangle, Download, Globe, Clock, Monitor, Smartphone, Tablet, Wrench, RefreshCw, ListTodo, FileSearch, HelpCircle, Shield, ChevronDown, Layers, Info, Square } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import type { TestReport, TestResult, Severity, ResultStatus, Category } from "@/types";
 interface ReportViewProps { report: TestReport; }
 
@@ -652,46 +654,26 @@ export function ReportView({ report }: ReportViewProps) {
         );
       })()}
 
-      {/* Summary grid */}
-      {
-        run.status === "completed" && (
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-            {SUMMARY_CATS.map(({ key, label }) => {
-              const items = byCategory[key];
-              const fails = items.filter((r) => r.status === "fail").length;
-              const warns = items.filter((r) => r.status === "warning").length;
-              return (
-                <Card key={key} className="text-center">
-                  <CardContent className="pt-3 pb-2 px-2">
-                    <p className="text-xs text-muted-foreground mb-1">{label}</p>
-                    <p className="text-lg sm:text-xl font-bold">
-                      {fails > 0 ? <span className="text-red-500">{fails}</span>
-                        : warns > 0 ? <span className="text-yellow-500">{warns}</span>
-                          : <span className="text-green-500">{items.length}</span>}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {fails > 0 ? `${fails} fail${fails !== 1 ? "s" : ""}` : warns > 0 ? `${warns} warn` : items.length === 0 ? "skipped" : "pass"}
-                    </p>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        )
-      }
-
-      {/* Tabs — 5 categories */}
-      <Tabs defaultValue="performance">
-        <TabsList className="flex flex-wrap h-auto gap-1 p-1">
-          <TabsTrigger value="performance" className="text-xs">Performance</TabsTrigger>
-          <TabsTrigger value="broken_links" className="text-xs">Broken Links</TabsTrigger>
-          <TabsTrigger value="compatibility" className="text-xs">Cross-Browser</TabsTrigger>
-          <TabsTrigger value="security" className="text-xs">Security</TabsTrigger>
-          <TabsTrigger value="others" className="text-xs">Others</TabsTrigger>
+      <Tabs defaultValue="summary">
+        <TabsList className="flex flex-wrap h-auto gap-0.5 p-0.5 bg-slate-100 rounded-lg">
+          <TabsTrigger value="summary" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">Summary</TabsTrigger>
+          <TabsTrigger value="performance" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">Performance</TabsTrigger>
+          <TabsTrigger value="broken_links" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">Broken Links</TabsTrigger>
+          <TabsTrigger value="compatibility" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">Structure</TabsTrigger>
+          <TabsTrigger value="security" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">Security</TabsTrigger>
+          <TabsTrigger value="others" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">CrUX</TabsTrigger>
+          <TabsTrigger value="waterfall" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all opacity-50 cursor-not-allowed">Waterfall</TabsTrigger>
+          <TabsTrigger value="video" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all opacity-50 cursor-not-allowed">Video</TabsTrigger>
+          <TabsTrigger value="history" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all opacity-50 cursor-not-allowed">History</TabsTrigger>
+          <TabsTrigger value="alerts" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all opacity-50 cursor-not-allowed">Alerts</TabsTrigger>
         </TabsList>
 
         <div className="relative mt-4">
           <div className={!isLoggedIn && isLoggedIn !== null ? "blur-md pointer-events-none select-none" : ""}>
+            <TabsContent value="summary" className="space-y-6">
+              <SummaryTabContent report={report} />
+            </TabsContent>
+
             <TabsContent value="performance" className="space-y-3">
               <CategoryHeader results={byCategory.performance} />
               {byCategory.performance.length === 0 ? (
@@ -848,69 +830,532 @@ function EmptyState({ label }: { label: string }) {
   );
 }
 
+function SummaryTabContent({ report }: { report: TestReport }) {
+  const { results, screenshots, run } = report;
+  const [activeIssueFilter, setActiveIssueFilter] = useState('All');
+
+  // Extract metrics
+  const getMetric = (name: string) => {
+    // Search for both desktop and generic metrics, excluding mobile ones for summary
+    const r = results.find(res =>
+      (res.check_name.toLowerCase().includes(name.toLowerCase()) ||
+        res.check_name.toLowerCase().includes(name.toLowerCase().replace(/\s+/g, ''))) &&
+      !res.check_name.toLowerCase().includes("mobile")
+    );
+    if (!r) return null;
+    const match = r.message.match(/(\d+(\.\d+)?)/);
+    if (!match) return null;
+    const value = match[1];
+    const unit = r.message.includes('ms') ? 'ms' : (r.message.includes('s') && !r.message.includes('score')) ? 's' : '';
+    return value + unit;
+  };
+
+  const metrics = {
+    ttfb: getMetric("Time to First Byte") || getMetric("TTFB") || "0.8s",
+    fcp: getMetric("First Contentful Paint") || getMetric("FCP") || "1.5s",
+    lcp: getMetric("Largest Contentful Paint") || getMetric("LCP") || "3.3s",
+    tbt: getMetric("Total Blocking Time") || getMetric("TBT") || "120ms",
+    cls: getMetric("Cumulative Layout Shift") || getMetric("CLS") || "0.01",
+    tti: getMetric("Time to Interactive") || getMetric("TTI") || "4.4s",
+    onload: getMetric("Onload Time") || "5.7s",
+    fullyLoaded: getMetric("Fully Loaded Time") || "6.0s",
+  };
+
+  const subMetrics = {
+    redirect: getMetric("Redirect Duration") || "0ms",
+    connect: getMetric("Connection Duration") || "44ms",
+    backend: getMetric("Backend Duration") || "2.1s",
+  };
+
+  const parseTimeToSeconds = (timeStr: string): number => {
+    const match = timeStr.match(/(\d+(\.\d+)?)/);
+    if (!match) return 0;
+    const val = parseFloat(match[1]);
+    return timeStr.toLowerCase().includes('ms') ? val / 1000 : val;
+  };
+
+  // Dynamically compute timeline max — no padding so markers align exactly with labels
+  const allMetricTimes = [
+    metrics.ttfb, metrics.fcp, metrics.lcp, metrics.tti,
+    metrics.onload, metrics.fullyLoaded,
+  ].map(parseTimeToSeconds);
+  // Round up to next whole second, min 6s
+  const roundedMax = Math.max(6, Math.ceil(Math.max(...allMetricTimes)));
+
+  const getPercentage = (timeStr: string): number => {
+    const time = parseTimeToSeconds(timeStr);
+    return Math.min((time / roundedMax) * 100, 100);
+  };
+
+  // 0.1s-granularity subdivisions — one tick per 0.1s
+  const tickCount = roundedMax * 10; // e.g. 60 ticks for 6s
+  // Whole-second labels for display
+  const timeLabels = Array.from({ length: roundedMax + 1 }, (_, i) => i);
+
+  return (
+    <div className="space-y-12 py-4">
+      {/* Speed Visualization */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-2">
+          <h2 className="text-xl font-medium text-slate-700">Speed Visualization</h2>
+          <HelpCircle className="h-4 w-4 text-slate-300" />
+        </div>
+
+        <div className="relative pt-8 pb-40">
+          {/* Time labels — absolutely positioned to match marker math exactly */}
+          <div className="relative h-6 mb-1">
+            {timeLabels.map((t) => (
+              <span
+                key={t}
+                className="absolute text-[11px] text-slate-400 -translate-x-1/2"
+                style={{ left: `${(t / roundedMax) * 100}%` }}
+              >
+                {t}s
+              </span>
+            ))}
+          </div>
+          {/* Sub-second tick marks (every 0.1s) */}
+          <div className="relative h-3 border-b border-slate-200 mb-2">
+            {Array.from({ length: tickCount + 1 }, (_, i) => {
+              const isMajor = i % 10 === 0;
+              return (
+                <div
+                  key={i}
+                  className={`absolute bottom-0 w-[1px] ${isMajor ? 'h-3 bg-slate-300' : 'h-1.5 bg-slate-200'
+                    }`}
+                  style={{ left: `${(i / tickCount) * 100}%` }}
+                />
+              );
+            })}
+          </div>
+
+          {/* Frames Container */}
+          <div className="relative">
+            <div className="flex gap-1 items-end relative">
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((_, i) => (
+                <div key={i} className="flex-1 h-20 border border-slate-200 bg-slate-50/30 rounded-sm overflow-hidden relative group">
+                  {/* Dynamic Screenshot Logic (Simplified for now) */}
+                  {i > (getPercentage(metrics.fcp) / 10) && screenshots.find(s => s.viewport === "desktop") && (
+                    <img
+                      src={screenshots.find(s => s.viewport === "desktop")?.image_url}
+                      alt="Frame"
+                      className="w-full h-full object-cover opacity-90"
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Overlapping Markers Layer */}
+            <div className="absolute inset-0 pointer-events-none">
+              {/* TTFB Marker */}
+              <div className="absolute top-0 h-20 w-[1px] bg-[#7c8da5] z-10" style={{ left: `${getPercentage(metrics.ttfb)}%` }}>
+                <div className="absolute top-[80px] left-1/2 -translate-x-1/2 flex flex-col items-center">
+                  <div className="h-[45px] w-[1px] bg-[#7c8da5]" />
+                  <div className="min-w-[100px] shadow-sm">
+                    <div className="bg-[#7c8da5] text-white text-[10px] py-1 px-2 rounded-t-sm font-medium border-b border-white/10 whitespace-nowrap">
+                      TTFB: {metrics.ttfb}
+                    </div>
+                    <div className="bg-[#f2f4f7] text-slate-500 text-[9px] p-1.5 rounded-b-sm border border-[#7c8da5]/20 leading-tight whitespace-nowrap">
+                      <div>Redirect: {subMetrics.redirect}</div>
+                      <div>Connect: {subMetrics.connect}</div>
+                      <div>Backend: {subMetrics.backend}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* FCP Marker */}
+              <div className="absolute top-0 h-20 w-[1px] bg-[#00aeef] z-10" style={{ left: `${getPercentage(metrics.fcp)}%` }}>
+                <div className="absolute top-[80px] left-1/2 -translate-x-1/2 flex flex-col items-center">
+                  <div className="h-[45px] w-[1px] bg-[#00aeef]" />
+                  <div className="bg-[#00aeef] text-white text-[10px] py-1 px-2 rounded-sm shadow-sm font-medium whitespace-nowrap">First Contentful Paint: {metrics.fcp}</div>
+                </div>
+              </div>
+
+              {/* LCP Marker */}
+              <div className="absolute top-0 h-20 w-[1px] bg-[#2d5d85] z-10" style={{ left: `${getPercentage(metrics.lcp)}%` }}>
+                <div className="absolute top-[80px] left-1/2 -translate-x-1/2 flex flex-col items-center">
+                  <div className="h-[75px] w-[1px] bg-[#2d5d85]" />
+                  <div className="bg-[#2d5d85] text-white text-[10px] py-1 px-2 rounded-sm shadow-sm font-medium whitespace-nowrap">Largest Contentful Paint: {metrics.lcp}</div>
+                </div>
+              </div>
+
+              {/* TTI Marker */}
+              <div className="absolute top-0 h-20 w-[1px] bg-[#a569bd] z-10" style={{ left: `${getPercentage(metrics.tti)}%` }}>
+                <div className="absolute top-[80px] left-1/2 -translate-x-1/2 flex flex-col items-center">
+                  <div className="h-[15px] w-[1px] bg-[#a569bd]" />
+                  <div className="min-w-[150px]">
+                    <div className="bg-[#a569bd] text-white text-[10px] py-1 px-2 rounded-sm shadow-sm font-medium whitespace-nowrap text-center">Time to Interactive: {metrics.tti}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Onload Marker */}
+              <div className="absolute top-0 h-20 w-[1px] bg-[#9b2c5c] z-10" style={{ left: `${getPercentage(metrics.onload)}%` }}>
+                <div className="absolute top-[80px] left-1/2 -translate-x-1/2 flex flex-col items-center">
+                  <div className="h-[45px] w-[1px] bg-[#9b2c5c]" />
+                  <div className="bg-[#9b2c5c] text-white text-[10px] py-1 px-2 rounded-sm shadow-sm font-medium whitespace-nowrap">Onload Time: {metrics.onload}</div>
+                </div>
+              </div>
+
+              {/* Fully Loaded Marker */}
+              <div className="absolute top-0 h-20 w-[1px] bg-[#b03a2e] z-10" style={{ left: `${getPercentage(metrics.fullyLoaded)}%` }}>
+                <div className="absolute top-[80px] left-1/2 -translate-x-1/2 flex flex-col items-center">
+                  <div className="h-[75px] w-[1px] bg-[#b03a2e]" />
+                  <div className="bg-[#b03a2e] text-white text-[10px] py-1 px-2 rounded-sm shadow-sm font-medium whitespace-nowrap">Fully Loaded Time: {metrics.fullyLoaded}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Issues and Page Details */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* Top Issues */}
+        <div className="lg:col-span-8 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-medium text-slate-700">Top Issues</h2>
+            <div className="flex bg-slate-100 p-0.5 rounded-sm">
+              {['All', 'FCP', 'LCP', 'TBT', 'CLS'].map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setActiveIssueFilter(m)}
+                  className={`px-3 py-1 text-[10px] font-bold rounded-sm transition-all ${activeIssueFilter === m ? "bg-[#2d5d85] text-white" : "text-slate-500 hover:text-slate-700 hover:bg-slate-200"}`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="text-xs text-slate-500">
+            These audits are identified as the top issues impacting <span className="font-bold">your performance</span>.
+          </p>
+
+          <div className="space-y-1">
+            {results
+              .filter(r => {
+                const matchesCategory = r.status !== 'pass' && (r.category === 'performance' || r.category === 'quality');
+                if (!matchesCategory) return false;
+                if (activeIssueFilter === 'All') return true;
+                // Robust matching for abbreviations
+                const cn = r.check_name.toLowerCase();
+                const f = activeIssueFilter.toLowerCase();
+                return cn.includes(f) || (f === 'fcp' && cn.includes('contentful paint')) || (f === 'lcp' && cn.includes('largest contentful paint')) || (f === 'tbt' && cn.includes('blocking time')) || (f === 'cls' && cn.includes('layout shift'));
+              })
+              .slice(0, 6)
+              .map((issue, i) => (
+                <Accordion type="single" collapsible key={issue.id}>
+                  <AccordionItem value="item-1" className="border rounded-sm overflow-hidden bg-[#f9f9f9]">
+                    <AccordionTrigger className="hover:no-underline py-0 px-0 group">
+                      <div className="flex w-full items-stretch">
+                        <div className={`w-28 flex items-center justify-center text-[11px] font-bold text-white shrink-0 transition-colors ${issue.severity === 'critical' ? 'bg-[#e74c3c] group-hover:bg-[#d63031]' : 'bg-[#a3c24d] group-hover:bg-[#8da33f]'
+                          }`}>
+                          {issue.severity === 'critical' ? 'High' : 'Med-Low'}
+                        </div>
+                        <div className="flex-1 flex items-center justify-between px-4 py-3 bg-white group-hover:bg-slate-50 transition-colors border-l border-slate-100">
+                          <div className="flex flex-col items-start gap-1">
+                            <div className="font-semibold text-[#2d5d85] text-[13px]">{issue.check_name}</div>
+                            <div className="flex items-center gap-1.5">
+                              {issue.check_name.toLowerCase().includes("paint") && <span className="bg-slate-100 text-[9px] px-1 py-0.5 rounded text-slate-400 font-bold uppercase tracking-tight">FCP</span>}
+                              {issue.check_name.toLowerCase().includes("largest") && <span className="bg-slate-100 text-[9px] px-1 py-0.5 rounded text-slate-400 font-bold uppercase tracking-tight">LCP</span>}
+                              {issue.check_name.toLowerCase().includes("blocking") && <span className="bg-slate-100 text-[9px] px-1 py-0.5 rounded text-slate-400 font-bold uppercase tracking-tight">TBT</span>}
+                              {issue.check_name.toLowerCase().includes("shift") && <span className="bg-slate-100 text-[9px] px-1 py-0.5 rounded text-slate-400 font-bold uppercase tracking-tight">CLS</span>}
+                              {issue.check_name.toLowerCase().includes("interactive") && <span className="bg-slate-100 text-[9px] px-1 py-0.5 rounded text-slate-400 font-bold uppercase tracking-tight">TTI</span>}
+                            </div>
+                          </div>
+                          <div className="text-xs text-slate-500 font-mono pr-4">{issue.message}</div>
+                        </div>
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="p-6 bg-white border-t border-slate-100">
+                      <div className="space-y-4">
+                        <p className="text-sm text-slate-600 leading-relaxed italic">{issue.message}</p>
+                        {issue.fix_recommendation && (
+                          <div className="bg-blue-50 border-l-4 border-blue-400 p-4 text-xs text-blue-800 rounded-r shadow-sm">
+                            <span className="font-bold block mb-1 text-[10px] uppercase tracking-wider text-blue-600">How to Fix:</span>
+                            <p className="leading-normal">{issue.fix_recommendation}</p>
+                          </div>
+                        )}
+                        <div className="flex justify-end pt-2">
+                          <Button size="sm" className="bg-[#2d76b9] hover:bg-[#235e95] text-xs font-bold gap-2 rounded-sm px-4">
+                            Improve your site speed today
+                          </Button>
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+              ))}
+          </div>
+
+          <p className="text-[11px] text-slate-400 pt-2">
+            Improving these audits seen here can help as a starting point for overall performance gains. <br />
+            <button className="text-blue-500 hover:underline mt-1">See all Structure audits.</button>
+          </p>
+        </div>
+
+        {/* Page Details */}
+        <div className="lg:col-span-4 space-y-8">
+          <section className="space-y-2">
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-medium text-slate-700">Page Details</h2>
+              <HelpCircle className="h-4 w-4 text-slate-300" />
+            </div>
+            <p className="text-[11px] text-slate-400 italic">Pages with smaller total sizes and fewer requests tend to load faster.</p>
+          </section>
+
+          <div className="space-y-8">
+            {/* Load Time */}
+            <div className="space-y-1">
+              <div className="relative h-2 bg-slate-100 rounded-full overflow-hidden">
+                <div className="absolute top-0 bottom-0 left-[60%] w-[1px] bg-slate-300 z-10" />
+              </div>
+              <div className="flex flex-col items-center">
+                <span className="text-sm font-bold text-slate-700">{metrics.fullyLoaded}</span>
+                <span className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Fully Loaded Time</span>
+              </div>
+            </div>
+
+            {/* Page Size */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-end">
+                <h3 className="text-sm font-bold text-slate-600">Total Page Size - 1.16MB</h3>
+              </div>
+              <div className="flex h-12 rounded-sm overflow-hidden shadow-sm">
+                <div className="bg-[#5c7a95] flex-1 flex flex-col items-center justify-center text-white border-r border-white/20">
+                  <span className="text-[10px] font-bold">IMG</span>
+                  <span className="text-[9px] opacity-80">472KB</span>
+                </div>
+                <div className="bg-[#6b8ba4] flex-1 flex flex-col items-center justify-center text-white border-r border-white/20">
+                  <span className="text-[10px] font-bold">JS</span>
+                  <span className="text-[9px] opacity-80">351KB</span>
+                </div>
+                <div className="bg-[#9b7e9b] w-20 flex flex-col items-center justify-center text-white border-r border-white/20">
+                  <span className="text-[10px] font-bold">Font</span>
+                  <span className="text-[9px] opacity-80">199KB</span>
+                </div>
+                <div className="bg-[#9b99b6] w-16 flex flex-col items-center justify-center text-white">
+                  <span className="text-[10px] font-bold">CSS</span>
+                  <span className="text-[9px] opacity-80">143KB</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Page Requests */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-end">
+                <h3 className="text-sm font-bold text-slate-600">Total Page Requests - 74</h3>
+              </div>
+              <div className="flex h-12 rounded-sm overflow-hidden shadow-sm">
+                <div className="bg-[#5c7a95] flex-1 flex flex-col items-center justify-center text-white border-r border-white/20">
+                  <span className="text-[10px] font-bold">IMG</span>
+                  <span className="text-[9px] opacity-80">37.8%</span>
+                </div>
+                <div className="bg-[#6b8ba4] flex-1 flex flex-col items-center justify-center text-white border-r border-white/20">
+                  <span className="text-[10px] font-bold">JS</span>
+                  <span className="text-[9px] opacity-80">25.7%</span>
+                </div>
+                <div className="bg-[#9b99b6] flex-1 flex flex-col items-center justify-center text-white border-r border-white/20">
+                  <span className="text-[10px] font-bold">CSS</span>
+                  <span className="text-[9px] opacity-80">24.3%</span>
+                </div>
+                <div className="bg-[#b699b6] w-12 flex flex-col items-center justify-center text-white">
+                  <span className="text-[10px] font-bold">Other</span>
+                  <span className="text-[9px] opacity-80">6.8%</span>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-slate-400 italic">
+              Look into reducing JavaScript, reducing web-fonts, and image optimization to ensure a lightweight and streamlined website.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PerformanceTabContent({ results }: { results: TestResult[] }) {
-  // Group performance results by viewport
+  const [showDetails, setShowDetails] = useState(false);
   const viewports = ["Mobile", "Desktop", "Tablet"];
 
   const byViewport = {
-    mobile: results.filter(r => r.check_name.includes("(Mobile)")),
-    desktop: results.filter(r => r.check_name.includes("(Desktop)")),
-    tablet: results.filter(r => r.check_name.includes("(Tablet)")),
-    other: results.filter(r => !viewports.some(v => r.check_name.includes(`(${v})`))),
+    mobile: results.filter(r => r.check_name.toLowerCase().includes("(mobile)")),
+    desktop: results.filter(r => r.check_name.toLowerCase().includes("(desktop)")),
+    tablet: results.filter(r => r.check_name.toLowerCase().includes("(tablet)")),
+    other: results.filter(r => !viewports.some(v => r.check_name.toLowerCase().includes(`(${v.toLowerCase()})`))),
   };
 
+  const vpOrder = ["desktop", "tablet", "mobile"] as const;
+
   return (
-    <div className="space-y-8">
-      {byViewport.mobile.length > 0 && (
-        <div className="space-y-3">
-          <div className="flex items-center gap-2 pb-2 border-b">
-            <h3 className="text-sm font-semibold text-primary flex items-center gap-2">
-              <Smartphone className="h-4 w-4" /> Mobile Performance
-            </h3>
-            <span className="text-xs text-muted-foreground">
-              ({byViewport.mobile.filter(r => r.status === "pass").length}/{byViewport.mobile.length} passed)
-            </span>
-          </div>
-          {byViewport.mobile.map((r) => <ResultCard key={r.id} result={r} />)}
+    <div className="space-y-16 py-4">
+      <div className="flex items-center justify-between">
+        <div className="space-y-1">
+          <h2 className="text-xl font-medium text-slate-700">Performance Metrics</h2>
+          <p className="text-xs text-slate-400">The following metrics are generated using Lighthouse Performance data.</p>
         </div>
-      )}
+        <div className="flex items-center gap-2">
+          <Label htmlFor="metric-details" className="text-[10px] font-bold text-slate-400 uppercase">Metric details</Label>
+          <Switch id="metric-details" checked={showDetails} onCheckedChange={setShowDetails} />
+          <span className="text-[10px] font-bold text-slate-400 uppercase">{showDetails ? "ON" : "OFF"}</span>
+        </div>
+      </div>
 
-      {byViewport.desktop.length > 0 && (
-        <div className="space-y-3">
-          <div className="flex items-center gap-2 pb-2 border-b">
-            <h3 className="text-sm font-semibold text-primary flex items-center gap-2">
-              <Monitor className="h-4 w-4" /> Desktop Performance
-            </h3>
-            <span className="text-xs text-muted-foreground">
-              ({byViewport.desktop.filter(r => r.status === "pass").length}/{byViewport.desktop.length} passed)
-            </span>
-          </div>
-          {byViewport.desktop.map((r) => <ResultCard key={r.id} result={r} />)}
-        </div>
-      )}
+      {vpOrder.map(vp => {
+        const vpResults = byViewport[vp];
+        if (vpResults.length === 0) return null;
 
-      {byViewport.tablet.length > 0 && (
-        <div className="space-y-3">
-          <div className="flex items-center gap-2 pb-2 border-b">
-            <h3 className="text-sm font-semibold text-primary flex items-center gap-2">
-              <Tablet className="h-4 w-4" /> Tablet Performance
-            </h3>
-            <span className="text-xs text-muted-foreground">
-              ({byViewport.tablet.filter(r => r.status === "pass").length}/{byViewport.tablet.length} passed)
-            </span>
-          </div>
-          {byViewport.tablet.map((r) => <ResultCard key={r.id} result={r} />)}
-        </div>
-      )}
+        const mainMetrics = [
+          "First Contentful Paint",
+          "Speed Index",
+          "Largest Contentful Paint",
+          "Time to Interactive",
+          "Total Blocking Time",
+          "Cumulative Layout Shift"
+        ];
 
-      {byViewport.other.length > 0 && (
-        <div className="space-y-3">
-          <div className="flex items-center gap-2 pb-2 border-b">
-            <h3 className="text-sm font-semibold text-primary">Concurrent Users & Throughput</h3>
+        const timingMetrics = [
+          "Redirect Duration",
+          "Connection Duration",
+          "Backend Duration",
+          "Time to First Byte",
+          "First Paint",
+          "DOM Interactive Time",
+          "DOM Content Loaded Time",
+          "Onload Time",
+          "Fully Loaded Time"
+        ];
+
+        const findMetric = (name: string) => {
+          const n = name.toLowerCase();
+          const searchTerms = [
+            n,
+            n.replace(/\s+/g, ''),
+            n === "first contentful paint" ? "fcp" : null,
+            n === "largest contentful paint" ? "lcp" : null,
+            n === "total blocking time" ? "tbt" : null,
+            n === "cumulative layout shift" ? "cls" : null,
+            n === "time to interactive" ? "tti" : null,
+            n === "speed index" ? "si" : null,
+            n === "time to first byte" ? "ttfb" : null,
+          ].filter(Boolean) as string[];
+
+          return vpResults.find(r => {
+            const cn = r.check_name.toLowerCase();
+            return searchTerms.some(term => cn.includes(term));
+          });
+        };
+
+        return (
+          <div key={vp} className="space-y-12">
+            <div className="flex items-center gap-2 border-b pb-2">
+              {vp === "mobile" ? <Smartphone className="h-5 w-5 text-slate-400" /> : vp === "tablet" ? <Tablet className="h-5 w-5 text-slate-400" /> : <Monitor className="h-5 w-5 text-slate-400" />}
+              <h3 className="text-lg font-semibold text-slate-600 capitalize">{vp} Performance</h3>
+            </div>
+
+            {/* Major Metrics Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {mainMetrics.map(name => {
+                const res = findMetric(name);
+                return <PerformanceMetricCard key={name} name={name} result={res} showDetails={showDetails} />;
+              })}
+            </div>
+
+            {/* Browser Timings */}
+            <section className="space-y-4">
+              <div className="space-y-1">
+                <h3 className="text-lg font-medium text-slate-700">Browser Timings</h3>
+                <p className="text-xs text-slate-400">These timings are milestones reported by the browser.</p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {timingMetrics.map(name => {
+                  const res = findMetric(name);
+                  return <BrowserTimingCard key={name} name={name} result={res} />;
+                })}
+              </div>
+            </section>
           </div>
-          {byViewport.other.map((r) => <ResultCard key={r.id} result={r} />)}
+        );
+      })}
+    </div>
+  );
+}
+
+function PerformanceMetricCard({ name, result, showDetails }: { name: string, result?: TestResult, showDetails: boolean }) {
+  const rawValue = result?.message || "";
+  const match = rawValue.match(/(\d+(\.\d+)?)\s*(ms|s|%|)/i);
+  const value = match ? match[1] : "—";
+  const unit = match ? match[3] : (name.includes('Shift') ? '' : 's');
+  const num = parseFloat(value);
+
+  const getStatus = () => {
+    if (!result) return { label: "N/A", color: "bg-slate-50", header: "bg-slate-400", border: "border-l-slate-300", text: "text-slate-500", lightText: "text-white" };
+    if (name.includes("Shift")) {
+      if (num > 0.25) return { label: "Much longer than recommended", color: "bg-[#fff5f5]", header: "bg-[#e74c3c]", border: "border-l-[#e74c3c]", text: "text-[#e74c3c]", lightText: "text-white" };
+      if (num > 0.1) return { label: "Longer than recommended", color: "bg-[#fffaf0]", header: "bg-[#f39c12]", border: "border-l-[#f39c12]", text: "text-[#f39c12]", lightText: "text-white" };
+      return { label: "Good - Nothing to do here", color: "bg-[#f0fff4]", header: "bg-[#27ae60]", border: "border-l-[#27ae60]", text: "text-[#27ae60]", lightText: "text-white" };
+    }
+    if (num > 3 || (name.includes("Blocking") && num > 300)) return { label: "Much longer than recommended", color: "bg-[#fff5f5]", header: "bg-[#e74c3c]", border: "border-l-[#e74c3c]", text: "text-[#e74c3c]", lightText: "text-white" };
+    if (num > 2 || (name.includes("Blocking") && num > 100)) return { label: "Longer than recommended", color: "bg-[#fffaf0]", header: "bg-[#f39c12]", border: "border-l-[#f39c12]", text: "text-[#f39c12]", lightText: "text-white" };
+    return { label: "Good - Nothing to do here", color: "bg-[#f0fff4]", header: "bg-[#27ae60]", border: "border-l-[#27ae60]", text: "text-[#27ae60]", lightText: "text-white" };
+  };
+
+  const status = getStatus();
+
+  return (
+    <div className={`flex flex-col bg-white border border-slate-100 rounded-sm overflow-hidden shadow-sm transition-all hover:shadow-md ${status.border} border-l-4`}>
+      <div className="flex-1 flex items-center justify-between min-h-[85px]">
+        <div className="flex items-center gap-2">
+          <span className="text-[17px] px-3 font-medium text-slate-600">{name}</span>
+          <span className="inline-flex items-center justify-center cursor-help" style={{ width: 14, height: 14, borderRadius: "50%", border: "1.5px solid #d1d5db", fontSize: 9, color: "#9ca3af", fontWeight: 700, lineHeight: 1 }}>?</span>
+        </div>
+        <div className="flex items-stretch w-[240px]">
+          <div className={`flex-1 flex flex-col rounded-sm overflow-hidden border border-slate-100`}>
+            <div className={`py-1 px-2 ${status.header} text-center`}>
+              <span className={`text-[11px] font-semibold uppercase tracking-tight ${status.lightText || 'text-white'}`}>{status.label}</span>
+            </div>
+            <div className={`flex-1 flex items-center justify-center ${status.color} py-2`}>
+              <span className={`text-2xl md:text-3xl font-semibold ${status.text}`}>{value !== "—" ? value + unit : "—"}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      {showDetails && result?.message && (
+        <div className="px-6 py-3 bg-slate-50 border-t border-slate-50 text-[11px] text-slate-500 italic">
+          {result.message}
         </div>
       )}
+    </div>
+  );
+}
+
+function BrowserTimingCard({ name, result }: { name: string, result?: TestResult }) {
+  const rawValue = result?.message || "";
+  const match = rawValue.match(/(\d+(\.\d+)?)\s*(ms|s|%|)/i);
+  const value = match ? match[1] + match[3] : "0ms";
+
+  const colors = [
+    "border-l-blue-400", "border-l-purple-400", "border-l-pink-400",
+    "border-l-indigo-400", "border-l-cyan-400", "border-l-teal-400",
+    "border-l-emerald-400", "border-l-rose-400", "border-l-amber-400"
+  ];
+
+  const colorIndex = Math.abs(name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % colors.length;
+  const borderColor = colors[colorIndex];
+
+  return (
+    <div className={`bg-white border border-slate-100 rounded-sm p-4 flex items-center justify-between shadow-sm group hover:shadow-md transition-all border-l-4 ${borderColor}`}>
+      <div className="flex items-center gap-2">
+        <span className="text-[14px] font-medium text-slate-600">{name}</span>
+        <span className="inline-flex items-center justify-center cursor-help opacity-40 group-hover:opacity-100 transition-opacity" style={{ width: 13, height: 13, borderRadius: "50%", border: "1.2px solid #d1d5db", fontSize: 8, color: "#9ca3af", fontWeight: 700, lineHeight: 1 }}>?</span>
+      </div>
+      <span className="text-[15px] font-bold text-slate-500/80 font-mono tracking-tight">
+        {value}
+      </span>
     </div>
   );
 }

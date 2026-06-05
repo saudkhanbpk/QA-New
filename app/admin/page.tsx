@@ -6,11 +6,7 @@ import { AdminDashboard } from "@/components/admin-dashboard";
 
 export const dynamic = "force-dynamic";
 
-// List of super admin email addresses
-const SUPER_ADMINS = [
-  "admin@autoqa.com", // Super admin account (case-insensitive)
-  // Add more admin emails here
-];
+import { isSuperAdmin, SUPER_ADMINS } from "@/lib/auth-constants";
 
 export default async function AdminPage() {
   const supabase = await createClient();
@@ -18,9 +14,8 @@ export default async function AdminPage() {
 
   if (!user) redirect("/login");
 
-  // Check if user is super admin (case-insensitive)
-  const userEmail = (user.email || "").toLowerCase();
-  const isAdmin = SUPER_ADMINS.some(admin => admin.toLowerCase() === userEmail);
+  // Check if user is super admin using centralized logic
+  const isAdmin = isSuperAdmin(user.email);
 
   if (!isAdmin) {
     redirect("/dashboard");

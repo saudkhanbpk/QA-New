@@ -410,14 +410,14 @@ export function NewTestForm({ prefillUrl, testRunId }: { prefillUrl?: string; te
               {/* Runner Identity — hidden when test is complete */}
               {!showReport && (
                 <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="p-5 rounded-2xl bg-white border border-slate-300 shadow-sm flex items-center gap-4">
+                  <div className="p-5 rounded-xl bg-white border border-slate-300 shadow-sm flex items-center gap-4">
                     <div className="h-12 w-12 rounded-xl bg-blue-50 flex items-center justify-center text-xl">🇺🇸</div>
                     <div>
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Test Server</p>
                       <p className="text-sm font-bold text-slate-800">Virginia, USA</p>
                     </div>
                   </div>
-                  <div className="p-5 rounded-2xl bg-white border border-slate-300 shadow-sm flex items-center gap-4">
+                  <div className="p-5 rounded-xl bg-white border border-slate-300 shadow-sm flex items-center gap-4">
                     <div className="h-12 w-12 rounded-xl bg-blue-50 flex items-center justify-center">
                       <Play className="h-6 w-6 text-primary" />
                     </div>
@@ -446,8 +446,8 @@ export function NewTestForm({ prefillUrl, testRunId }: { prefillUrl?: string; te
                   const isActive = progress >= step.minPrg && progress < step.maxPrg;
                   const isDone = progress >= step.maxPrg;
                   if (isActive) return (
-                    <div key={i} className="flex items-center gap-3 px-4 py-3 rounded-xl border border-blue-200 bg-blue-50 shadow-sm">
-                      <div className="h-7 w-7 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+                    <div key={i} className="flex items-center gap-3 px-4 py-3 rounded-sm border border-blue-200 bg-blue-50 shadow-sm">
+                      <div className="h-7 w-7 rounded-sm bg-blue-100 flex items-center justify-center shrink-0">
                         <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
                       </div>
                       <div className="flex-1 min-w-0">
@@ -471,8 +471,8 @@ export function NewTestForm({ prefillUrl, testRunId }: { prefillUrl?: string; te
                     </div>
                   );
                   return (
-                    <div key={i} className="flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-100 bg-white/50 opacity-50">
-                      <div className="h-7 w-7 rounded-full bg-slate-100 flex items-center justify-center shrink-0 text-sm">{step.icon}</div>
+                    <div key={i} className="flex items-center gap-3 px-4 py-3 rounded-sm border border-slate-100 bg-white/50 opacity-50">
+                      <div className="h-7 w-7 rounded-sm bg-slate-100 flex items-center justify-center shrink-0 text-sm">{step.icon}</div>
                       <p className="flex-1 text-sm font-semibold text-slate-400">{step.label}</p>
                       <span className="text-[10px] font-black uppercase tracking-wider text-slate-300 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-full">Queued</span>
                     </div>
@@ -503,7 +503,7 @@ export function NewTestForm({ prefillUrl, testRunId }: { prefillUrl?: string; te
 
             {/* Pro Insight — hide once report is shown */}
             {!showReport && (
-              <div className="p-8 rounded-3xl bg-white border border-slate-300 shadow-lg group overflow-hidden relative">
+              <div className="p-8 rounded-xl bg-white border border-slate-300 shadow-lg group overflow-hidden relative">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 blur-[60px] group-hover:bg-primary/10 transition-all duration-700" />
                 <div className="relative z-10">
                   <div className="bg-blue-50 text-primary text-[10px] font-black px-3 py-1.5 rounded-full w-fit mb-4 uppercase tracking-[0.2em] border border-blue-100">

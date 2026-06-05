@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Bug, LogOut, LayoutDashboard, Shield } from "lucide-react";
 import navbarbg from "@/components/ui/navbarbg.jpg";
+import { isSuperAdmin } from "@/lib/auth-constants";
 
 interface NavbarProps {
   userEmail?: string | null;
@@ -21,20 +22,27 @@ export function Navbar({ userEmail: initialUserEmail, isAdmin: initialIsAdmin }:
 
   useEffect(() => {
     setUserEmail(initialUserEmail);
-    setIsAdmin(initialIsAdmin);
+    // If initialIsAdmin is provided, use it, otherwise check if we have an email
+    if (initialIsAdmin !== undefined) {
+      setIsAdmin(initialIsAdmin);
+    } else if (initialUserEmail) {
+      setIsAdmin(isSuperAdmin(initialUserEmail));
+    }
   }, [initialUserEmail, initialIsAdmin]);
 
   useEffect(() => {
-    if (!userEmail) {
-      const getSession = async () => {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          setUserEmail(user.email);
+    const getSession = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setUserEmail(user.email);
+        // If isAdmin wasn't explicitly provided, check it here
+        if (initialIsAdmin === undefined) {
+          setIsAdmin(isSuperAdmin(user.email));
         }
-      };
-      getSession();
-    }
-  }, [userEmail, supabase]);
+      }
+    };
+    getSession();
+  }, [supabase, initialIsAdmin]);
 
   async function handleSignOut() {
     await supabase.auth.signOut();

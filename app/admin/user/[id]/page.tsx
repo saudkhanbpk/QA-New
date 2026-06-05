@@ -11,10 +11,7 @@ import { UserTestHistory } from "@/components/user-test-history";
 
 export const dynamic = "force-dynamic";
 
-// List of super admin email addresses
-const SUPER_ADMINS = [
-  "admin@autoqa.com",
-];
+import { isSuperAdmin } from "@/lib/auth-constants";
 
 interface PageProps {
   params: {
@@ -28,10 +25,9 @@ export default async function UserDetailPage({ params }: PageProps) {
 
   if (!user) redirect("/login");
 
-  // Check if user is super admin (case-insensitive)
-  const userEmail = (user.email || "").toLowerCase();
-  const isAdmin = SUPER_ADMINS.some(admin => admin.toLowerCase() === userEmail);
-  
+  // Check if user is super admin using centralized logic
+  const isAdmin = isSuperAdmin(user.email);
+
   if (!isAdmin) {
     redirect("/dashboard");
   }
