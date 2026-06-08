@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { error } from "node:console";
 
 export async function GET(
   _request: NextRequest,
@@ -22,7 +23,7 @@ export async function GET(
   const { data: run, error: runError } = await query.single();
 
   if (runError || !run) {
-    return NextResponse.json({ error: "Test run not found" }, { status: 404 });
+    return NextResponse.json({ error: "Test run not found", runError }, { status: 404 });
   }
 
   const { data: results } = await admin

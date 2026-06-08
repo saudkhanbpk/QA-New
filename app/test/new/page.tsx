@@ -4,11 +4,14 @@ import { Navbar } from "@/components/navbar";
 import { NewTestForm } from "@/components/new-test-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import React from "react";
+import { useSearchParams } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
 export default function NewTestPage({ searchParams }: { searchParams: { id?: string } }) {
-  const runId = searchParams.id;
+  const searchParams1 = useSearchParams();
+  const runId = searchParams1.get("id");
 
   if (!runId) {
     return (

@@ -30,7 +30,11 @@ create table public.test_results (
   message text not null,
   fix_recommendation text,
   screenshot_url text,
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  page_size jsonb,
+  page_request_size jsonb,
+  inner_pages_results jsonb,
+  cwv_results jsonb
 );
 
 -- Note: Category constraint removed to allow flexible category values

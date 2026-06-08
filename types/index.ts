@@ -64,6 +64,15 @@ export interface PageRequestSize {
   other_percent: number;
 }
 
+export interface CwvEntry {
+  url: string;
+  strategy: "mobile" | "desktop";
+  lcp: number | null;
+  inp: number | null;
+  cls: number | null;
+  source: "field" | "lab" | "none";
+}
+
 export interface TestResult {
   id: string;
   test_run_id: string;
@@ -78,6 +87,8 @@ export interface TestResult {
   responsive: boolean;
   page_size: PageSize[] | null;
   page_request_size: PageRequestSize[] | null;
+  inner_pages_results: { url: string }[] | null;
+  cwv_results: CwvEntry[] | null;
 }
 
 export interface Screenshot {
