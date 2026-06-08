@@ -1,11 +1,24 @@
-console.log("--------------------------------------------------");
-console.log(`WORKER BOOT: ${new Date().toISOString()}`);
-console.log(`TEST_RUN_ID: ${process.env.TEST_RUN_ID}`);
-console.log("--------------------------------------------------");
+import { logger } from "./logger";
+
+logger.info("--------------------------------------------------");
+logger.info(`WORKER BOOT: ${new Date().toISOString()}`);
+logger.info(`TEST_RUN_ID: ${process.env.TEST_RUN_ID}`);
+logger.info(`Log file: ${logger.logFilePath()}`);
+logger.info("--------------------------------------------------");
+
+// Redirect all console.* calls through the logger so existing code
+// automatically writes to the log file without individual replacements
+console.log   = (...args: unknown[]) => logger.info(args.map(String).join(" "));
+console.info  = (...args: unknown[]) => logger.info(args.map(String).join(" "));
+console.warn  = (...args: unknown[]) => logger.warn(args.map(String).join(" "));
+console.error = (...args: unknown[]) => logger.error(args.map(String).join(" "));
+console.debug = (...args: unknown[]) => logger.debug(args.map(String).join(" "));
 
 import { createClient } from "@supabase/supabase-js";
 import { getFixRecommendation } from "./fix-recommendations";
 import type { Viewport, Category, ResultStatus, Severity } from "./types";
+import { XMLParser } from "fast-xml-parser"
+import axios from "axios";
 
 interface RunPayload {
   url: string;
@@ -19,6 +32,15 @@ interface RunPayload {
   };
 }
 
+interface CwvEntry {
+  url: string;
+  strategy: "mobile" | "desktop";
+  lcp: number | null;   // ms
+  inp: number | null;   // ms
+  cls: number | null;   // score (e.g. 0.05)
+  source: "field" | "lab" | "none";
+}
+
 interface TestResultInsert {
   test_run_id: string;
   category: Category;
@@ -30,6 +52,8 @@ interface TestResultInsert {
   screenshot_url: string | null;
   page_size?: [{ total_size: number; html_size: number; image_size: number; js_size: number; css_size: number; font_size: number }];
   page_request_size?: [{ total_requests: number; image_requests: number; js_requests: number; other_requests: number; css_requests: number; font_requests: number, image_percent: number; js_percent: number; css_percent: number; font_percent: number; other_percent: number }];
+  inner_pages_results?: [{ url: string }];
+  cwv_results?: CwvEntry[];
 }
 
 const VIEWPORT_SIZES: Record<Viewport, { width: number; height: number }> = {
@@ -362,24 +386,12 @@ async function runTests(
     await page.waitForTimeout(2000);
 
     const fsMetrics = await page.evaluate(() => {
-      const resources =
-        performance.getEntriesByType(
-          "resource"
-        ) as PerformanceResourceTiming[];
+      const resources = performance.getEntriesByType("resource") as PerformanceResourceTiming[];
 
-      const navigation =
-        performance.getEntriesByType(
-          "navigation"
-        )[0] as PerformanceNavigationTiming | undefined;
+      const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
 
-      const getSize = (
-        entry:
-          | PerformanceResourceTiming
-          | PerformanceNavigationTiming
-          | undefined
-      ) => {
+      const getSize = (entry: | PerformanceResourceTiming | PerformanceNavigationTiming | undefined) => {
         if (!entry) return 0;
-
         return (
           entry.transferSize ||
           entry.encodedBodySize ||
@@ -388,99 +400,32 @@ async function runTests(
         );
       };
 
-      const toKB = (bytes: number) =>
-        Math.round(bytes / 1024);
-
+      const toKB = (bytes: number) => Math.round(bytes / 1024);
       const documentSize = getSize(navigation);
-
-      const imageResources = resources.filter(
-        r =>
-          r.initiatorType === "img" ||
-          /\.(png|jpg|jpeg|gif|svg|webp|avif)(\?|$)/i.test(
-            r.name
-          )
+      const imageResources = resources.filter(r => r.initiatorType === "img" ||
+        /\.(png|jpg|jpeg|gif|svg|webp|avif)(\?|$)/i.test(
+          r.name
+        )
       );
 
-      const jsResources = resources.filter(
-        r =>
-          r.initiatorType === "script" ||
-          /\.js(\?|$)/i.test(r.name)
-      );
+      const jsResources = resources.filter(r => r.initiatorType === "script" || /\.js(\?|$)/i.test(r.name));
+      const cssResources = resources.filter(r => /\.css(\?|$)/i.test(r.name));
+      const fontResources = resources.filter(r => r.initiatorType === "font" || /\.(woff|woff2|ttf|otf|eot)(\?|$)/i.test(
+        r.name));
 
-      const cssResources = resources.filter(
-        r =>
-          /\.css(\?|$)/i.test(r.name)
-      );
-
-      const fontResources = resources.filter(
-        r =>
-          r.initiatorType === "font" ||
-          /\.(woff|woff2|ttf|otf|eot)(\?|$)/i.test(
-            r.name
-          )
-      );
-
-      const imageSize = imageResources.reduce(
-        (sum, r) => sum + getSize(r),
-        0
-      );
-
-      const jsSize = jsResources.reduce(
-        (sum, r) => sum + getSize(r),
-        0
-      );
-
-      const cssSize = cssResources.reduce(
-        (sum, r) => sum + getSize(r),
-        0
-      );
-
-      const fontSize = fontResources.reduce(
-        (sum, r) => sum + getSize(r),
-        0
-      );
-
-      const totalResourceSize = resources.reduce(
-        (sum, r) => sum + getSize(r),
-        0
-      );
-
-      const totalPageSize =
-        documentSize + totalResourceSize;
-
-      const imageRequests =
-        imageResources.length;
-
-      const jsRequests =
-        jsResources.length;
-
-      const cssRequests =
-        cssResources.length;
-
-      const fontRequests =
-        fontResources.length;
-
-      const totalRequests =
-        resources.length + (navigation ? 1 : 0);
-
-      const otherRequests = Math.max(
-        0,
-        totalRequests -
-        imageRequests -
-        jsRequests -
-        cssRequests -
-        fontRequests
-      );
-
-      const percent = (
-        value: number,
-        total: number
-      ) =>
-        total > 0
-          ? Number(
-            ((value / total) * 100).toFixed(1)
-          )
-          : 0;
+      const imageSize = imageResources.reduce((sum, r) => sum + getSize(r), 0);
+      const jsSize = jsResources.reduce((sum, r) => sum + getSize(r), 0);
+      const cssSize = cssResources.reduce((sum, r) => sum + getSize(r), 0);
+      const fontSize = fontResources.reduce((sum, r) => sum + getSize(r), 0);
+      const totalResourceSize = resources.reduce((sum, r) => sum + getSize(r), 0);
+      const totalPageSize = documentSize + totalResourceSize;
+      const imageRequests = imageResources.length;
+      const jsRequests = jsResources.length;
+      const cssRequests = cssResources.length;
+      const fontRequests = fontResources.length;
+      const totalRequests = resources.length + (navigation ? 1 : 0);
+      const otherRequests = Math.max(0, totalRequests - imageRequests - jsRequests - cssRequests - fontRequests);
+      const percent = (value: number, total: number) => total > 0 ? Number(((value / total) * 100).toFixed(1)) : 0;
 
       return {
         totalKB: toKB(totalPageSize),
@@ -497,28 +442,281 @@ async function runTests(
         fontRequests,
         otherRequests,
 
-        imagePercent: percent(
-          imageRequests,
-          totalRequests
-        ),
-        jsPercent: percent(
-          jsRequests,
-          totalRequests
-        ),
-        cssPercent: percent(
-          cssRequests,
-          totalRequests
-        ),
-        fontPercent: percent(
-          fontRequests,
-          totalRequests
-        ),
-        otherPercent: percent(
-          otherRequests,
-          totalRequests
-        ),
+        imagePercent: percent(imageRequests, totalRequests),
+        jsPercent: percent(jsRequests, totalRequests),
+        cssPercent: percent(cssRequests, totalRequests),
+        fontPercent: percent(fontRequests, totalRequests),
+        otherPercent: percent(otherRequests, totalRequests),
       };
     });
+
+    // ── INNER PAGES DISCOVERY ──────────────────────────────────────────────────
+    // Strategy: 1) sitemap.xml  2) robots.txt Sitemap declarations  3) DOM <a> fallback
+
+    const parser = new XMLParser();
+    const baseUrl = new URL(url).origin;
+    const hostname = new URL(url).hostname;
+    const innerPages = new Set<string>();
+
+    logger.info(`[InnerPages] Starting discovery for ${url} (baseUrl=${baseUrl}, hostname=${hostname})`);
+
+    const normalizeUrl = (link: string) => {
+      try {
+        const u = new URL(link, baseUrl);
+        u.hash = "";
+        let clean = u.href;
+        if (clean.endsWith("/")) { clean = clean.slice(0, -1); }
+        return clean;
+      } catch (e) {
+        logger.debug(`[InnerPages] normalizeUrl failed for "${link}"`, e);
+        return null;
+      }
+    };
+
+    const isInternalPage = (link: string) => {
+      try {
+        const u = new URL(link);
+        if (u.hostname !== hostname) {
+          return false;
+        }
+        return !/\.(jpg|jpeg|png|gif|svg|webp|avif|ico|pdf|zip|rar|css|js|xml|json|woff|woff2|ttf|eot|mp4|mp3)(\?|$)/i.test(
+          u.pathname
+        );
+      } catch (e) {
+        logger.debug(`[InnerPages] isInternalPage URL parse failed for "${link}"`, e);
+        return false;
+      }
+    };
+
+    try {
+      const sitemapUrls = [`${baseUrl}/sitemap.xml`];
+
+      // Check robots.txt for additional Sitemap declarations
+      try {
+        logger.info(`[InnerPages] Fetching robots.txt from ${baseUrl}/robots.txt`);
+        const robots = await axios.get<string>(`${baseUrl}/robots.txt`, { timeout: 10000 });
+        const matches = robots.data.match(/^Sitemap:\s*(.+)$/gim);
+        if (matches) {
+          matches.forEach((line: string) => {
+            const extra = line.replace(/^Sitemap:\s*/i, "").trim();
+            logger.info(`[InnerPages] Found sitemap in robots.txt: ${extra}`);
+            sitemapUrls.push(extra);
+          });
+        } else {
+          logger.info("[InnerPages] No Sitemap declarations found in robots.txt");
+        }
+      } catch (e) {
+        logger.warn("[InnerPages] robots.txt fetch failed (non-fatal)", e);
+      }
+
+      logger.info(`[InnerPages] Will attempt ${sitemapUrls.length} sitemap URL(s): ${sitemapUrls.join(", ")}`);
+
+      // Parse sitemap(s)
+      for (const sitemapUrl of sitemapUrls) {
+        try {
+          logger.info(`[InnerPages] Fetching sitemap: ${sitemapUrl}`);
+          const { data } = await axios.get(sitemapUrl, { timeout: 15000 });
+          const xml = parser.parse(data as any);
+
+          // Normal sitemap
+          if (xml.urlset?.url) {
+            const urls = Array.isArray(xml.urlset.url) ? xml.urlset.url : [xml.urlset.url];
+            logger.info(`[InnerPages] Sitemap ${sitemapUrl} has ${urls.length} <url> entries`);
+
+            urls.forEach((item: any) => {
+              if (item?.loc && isInternalPage(item.loc)) {
+                const normalized = normalizeUrl(item.loc);
+                if (normalized) {
+                  innerPages.add(normalized);
+                }
+              }
+            });
+
+            logger.info(`[InnerPages] After parsing sitemap, innerPages.size = ${innerPages.size}`);
+          } else if (xml.sitemapindex?.sitemap) {
+            // Sitemap index — fetch child sitemaps
+            const childMaps = Array.isArray(xml.sitemapindex.sitemap)
+              ? xml.sitemapindex.sitemap
+              : [xml.sitemapindex.sitemap];
+
+            logger.info(`[InnerPages] Sitemap index with ${childMaps.length} child sitemap(s)`);
+
+            for (const child of childMaps) {
+              try {
+                logger.info(`[InnerPages] Fetching child sitemap: ${child.loc}`);
+                const childRes: any = await axios.get(child.loc, { timeout: 15000 });
+                const childXml = parser.parse(childRes.data);
+                const childUrls = childXml.urlset?.url || [];
+                const childUrlsArr = Array.isArray(childUrls) ? childUrls : [childUrls];
+
+                logger.info(`[InnerPages] Child sitemap ${child.loc} has ${childUrlsArr.length} entries`);
+
+                childUrlsArr.forEach((item: any) => {
+                  if (item?.loc && isInternalPage(item.loc)) {
+                    const normalized = normalizeUrl(item.loc);
+                    if (normalized) {
+                      innerPages.add(normalized);
+                    }
+                  }
+                });
+              } catch (e) {
+                logger.warn(`[InnerPages] Child sitemap fetch failed: ${child.loc}`, e);
+              }
+            }
+
+            logger.info(`[InnerPages] After sitemap index, innerPages.size = ${innerPages.size}`);
+          } else {
+            logger.warn(`[InnerPages] Sitemap ${sitemapUrl} returned no recognized structure. Parsed keys: ${Object.keys(xml).join(", ")}`);
+          }
+        } catch (e) {
+          logger.warn(`[InnerPages] Sitemap fetch/parse failed: ${sitemapUrl}`, e);
+        }
+      }
+
+      // Fallback to DOM <a href> links if sitemap yielded nothing
+      if (innerPages.size === 0) {
+        logger.info("[InnerPages] Sitemap yielded 0 pages — falling back to DOM link extraction");
+
+        const domLinks = await page.evaluate(() => {
+          return Array.from(document.querySelectorAll("a[href]")).map(
+            (a) => (a as HTMLAnchorElement).href
+          );
+        });
+
+        logger.info(`[InnerPages] DOM found ${domLinks.length} raw <a href> links`);
+
+        domLinks.forEach((link: string) => {
+          const clean = normalizeUrl(link);
+          if (clean && isInternalPage(clean)) {
+            innerPages.add(clean);
+          }
+        });
+
+        logger.info(`[InnerPages] After DOM filtering, innerPages.size = ${innerPages.size}`);
+
+        if (innerPages.size === 0) {
+          logger.warn("[InnerPages] DOM fallback also returned 0 internal pages. Sample raw links: " +
+            domLinks.slice(0, 10).join(" | "));
+        }
+      }
+
+      const innerPagesArray = Array.from(innerPages).map((u) => ({ url: u }));
+      logger.info(`[InnerPages] Final result: ${innerPagesArray.length} internal pages discovered`);
+      if (innerPagesArray.length > 0) {
+        logger.debug("[InnerPages] Sample pages (first 5):", innerPagesArray.slice(0, 5));
+      }
+
+      results.push({
+        test_run_id: testRunId,
+        category: "structure",
+        check_name: "Internal Pages Discovery",
+        status: "pass",
+        severity: "low",
+        message: `Found ${innerPages.size} internal pages`,
+        fix_recommendation: "null",
+        screenshot_url: null,
+        inner_pages_results: innerPagesArray as [{ url: string }],
+      });
+
+      // ── CORE WEB VITALS via Google PageSpeed Insights API ─────────────────────
+      // Fires all (page × strategy) calls in parallel — no sequential waiting.
+      const psiApiKey = process.env.PSI_API_KEY; // optional — higher quota when set
+      const pagesToScan = innerPagesArray.map((p) => p.url);
+
+      if (pagesToScan.length > 0) {
+        logger.info(`[CWV] Starting PSI scan for ${pagesToScan.length} pages × 2 strategies = ${pagesToScan.length * 2} parallel calls`);
+
+        const strategies: Array<"mobile" | "desktop"> = ["mobile", "desktop"];
+
+        /** Extract a metric value from PSI field data (loadingExperience) or lab data */
+        const extractMetric = (
+          psiData: any,
+          fieldKey: string,
+          labKey: string
+        ): { value: number | null; source: "field" | "lab" | "none" } => {
+          // Field data (real-user CrUX)
+          const fieldMetric = psiData?.loadingExperience?.metrics?.[fieldKey];
+          if (fieldMetric?.percentile != null) {
+            return { value: fieldMetric.percentile, source: "field" };
+          }
+          // Lab data fallback (Lighthouse simulated)
+          const labAudit = psiData?.lighthouseResult?.audits?.[labKey];
+          if (labAudit?.numericValue != null) {
+            return { value: Math.round(labAudit.numericValue), source: "lab" };
+          }
+          return { value: null, source: "none" };
+        };
+
+        // Build all API call promises at once
+        const allCalls = pagesToScan.flatMap((pageUrl) =>
+          strategies.map(async (strategy): Promise<CwvEntry> => {
+            const apiUrl = new URL("https://www.googleapis.com/pagespeedonline/v5/runPagespeed");
+            apiUrl.searchParams.set("url", pageUrl);
+            apiUrl.searchParams.set("strategy", strategy);
+            apiUrl.searchParams.set("category", "performance");
+            if (psiApiKey) apiUrl.searchParams.set("key", psiApiKey);
+
+            try {
+              logger.debug(`[CWV] → PSI ${strategy} ${pageUrl}`);
+              const res = await axios.get(apiUrl.toString(), { timeout: 30000 });
+              const data = res.data;
+
+              const lcp = extractMetric(data, "LARGEST_CONTENTFUL_PAINT_MS", "largest-contentful-paint");
+              const inp = extractMetric(data, "INTERACTION_TO_NEXT_PAINT",   "total-blocking-time");
+              const cls = extractMetric(data, "CUMULATIVE_LAYOUT_SHIFT_SCORE", "cumulative-layout-shift");
+
+              // Determine dominant source
+              const sources = [lcp.source, inp.source, cls.source];
+              const dominantSource: "field" | "lab" | "none" =
+                sources.includes("field") ? "field" :
+                sources.includes("lab")   ? "lab"   : "none";
+
+              logger.info(`[CWV] ✓ ${strategy} ${pageUrl} | LCP=${lcp.value}ms INP=${inp.value}ms CLS=${cls.value} (${dominantSource})`);
+
+              return {
+                url: pageUrl,
+                strategy,
+                lcp: lcp.value,
+                inp: inp.value,
+                cls: cls.value,
+                source: dominantSource,
+              };
+            } catch (e: any) {
+              logger.warn(`[CWV] ✗ PSI failed for ${strategy} ${pageUrl}: ${e?.message ?? e}`);
+              return { url: pageUrl, strategy, lcp: null, inp: null, cls: null, source: "none" };
+            }
+          })
+        );
+
+        // Fire ALL calls simultaneously
+        const settled = await Promise.allSettled(allCalls);
+        const cwvEntries: CwvEntry[] = settled
+          .filter((r): r is PromiseFulfilledResult<CwvEntry> => r.status === "fulfilled")
+          .map((r) => r.value);
+
+        const successCount = cwvEntries.filter((e) => e.lcp !== null || e.inp !== null || e.cls !== null).length;
+        logger.info(`[CWV] Scan complete — ${successCount}/${cwvEntries.length} entries have data`);
+
+        results.push({
+          test_run_id: testRunId,
+          category: "performance",
+          check_name: "Core Web Vitals (Per Page)",
+          status: successCount > 0 ? "pass" : "warning",
+          severity: "low",
+          message: `CWV scanned ${pagesToScan.length} pages (${strategies.length} strategies). ${successCount} entries returned data.`,
+          fix_recommendation: "Review LCP (<2.5s good), INP (<200ms good), CLS (<0.1 good) for each page.",
+          screenshot_url: null,
+          cwv_results: cwvEntries,
+        });
+      } else {
+        logger.warn("[CWV] No inner pages to scan — skipping CWV check");
+      }
+      // ── END CORE WEB VITALS ────────────────────────────────────────────────────
+
+    } catch (error) {
+      logger.error("[InnerPages] Discovery failed with unexpected error", error);
+    }
+
 
     await browser.close();
 

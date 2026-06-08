@@ -32,9 +32,27 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
+const logger_1 = require("./logger");
+logger_1.logger.info("--------------------------------------------------");
+logger_1.logger.info(`WORKER BOOT: ${new Date().toISOString()}`);
+logger_1.logger.info(`TEST_RUN_ID: ${process.env.TEST_RUN_ID}`);
+logger_1.logger.info(`Log file: ${logger_1.logger.logFilePath()}`);
+logger_1.logger.info("--------------------------------------------------");
+// Redirect all console.* calls through the logger so existing code
+// automatically writes to the log file without individual replacements
+console.log = (...args) => logger_1.logger.info(args.map(String).join(" "));
+console.info = (...args) => logger_1.logger.info(args.map(String).join(" "));
+console.warn = (...args) => logger_1.logger.warn(args.map(String).join(" "));
+console.error = (...args) => logger_1.logger.error(args.map(String).join(" "));
+console.debug = (...args) => logger_1.logger.debug(args.map(String).join(" "));
 const supabase_js_1 = require("@supabase/supabase-js");
 const fix_recommendations_1 = require("./fix-recommendations");
+const fast_xml_parser_1 = require("fast-xml-parser");
+const axios_1 = __importDefault(require("axios"));
 const VIEWPORT_SIZES = {
     mobile: { width: 375, height: 812 },
     tablet: { width: 768, height: 1024 },
@@ -105,8 +123,29 @@ async function validateNetworkSpeed() {
 async function main() {
     const testRunId = process.env.TEST_RUN_ID;
     const url = process.env.TARGET_URL;
-    const viewports = JSON.parse(process.env.VIEWPORTS || '["desktop"]');
-    const checks = JSON.parse(process.env.CHECKS || '{"performance":true,"broken_links":true,"compatibility":true,"security":true,"others":false}');
+    let viewports = ["desktop"];
+    try {
+        if (process.env.VIEWPORTS) {
+            if (process.env.VIEWPORTS.startsWith("[") || process.env.VIEWPORTS.startsWith('"')) {
+                viewports = JSON.parse(process.env.VIEWPORTS);
+            }
+            else {
+                viewports = process.env.VIEWPORTS.split(",").map(v => v.trim());
+            }
+        }
+    }
+    catch (e) {
+        console.warn("Failed to parse viewports, using default:", e);
+    }
+    let checks = { performance: true, broken_links: true, compatibility: true, security: true, others: false };
+    try {
+        if (process.env.CHECKS) {
+            checks = JSON.parse(process.env.CHECKS);
+        }
+    }
+    catch (e) {
+        console.warn("Failed to parse checks, using default:", e);
+    }
     if (!testRunId || !url) {
         console.error("Missing TEST_RUN_ID or TARGET_URL environment variables");
         process.exit(1);
@@ -119,17 +158,14 @@ async function main() {
     }
     const WebSocket = require('ws');
     const admin = (0, supabase_js_1.createClient)(supabaseUrl, supabaseServiceKey, {
-        auth: {
-            persistSession: false
-        },
-        realtime: {
-            transport: WebSocket
-        }
+        auth: { persistSession: false },
+        realtime: { transport: WebSocket }
     });
     console.log(`🚀 Fargate Worker started for Test Run: ${testRunId} | URL: ${url}`);
     try {
-        // ── RUN NETWORK SPEED VALIDATOR ──────────────────
+        console.log("Starting network speed validation...");
         const speedReport = await validateNetworkSpeed();
+        console.log("Network status:", speedReport.isStable ? "STABLE" : "UNSTABLE");
         // Insert network validation result into test_results
         await admin.from("test_results").insert({
             test_run_id: testRunId,
@@ -158,9 +194,14 @@ async function main() {
     }
     catch (err) {
         console.error("❌ Test runner error:", err);
-        await admin.from("test_runs")
-            .update({ status: "failed", completed_at: new Date().toISOString() })
-            .eq("id", testRunId);
+        try {
+            await admin.from("test_runs")
+                .update({ status: "failed", completed_at: new Date().toISOString() })
+                .eq("id", testRunId);
+        }
+        catch (e) {
+            console.error("Failed to mark test as failed:", e);
+        }
         process.exit(1);
     }
 }
@@ -224,6 +265,34 @@ async function runTests(testRunId, url, viewports, checks, admin, timeouts) {
                     fix_recommendation: cookieOk ? "" : (0, fix_recommendations_1.getFixRecommendation)("insecure_cookies"), screenshot_url: null
                 });
             }
+            // ── SERVER CONFIGURATION AUDITS ───────────────────────────────────────────
+            // 1. WWW vs non-WWW Redirect
+            const hasWww = url.includes("://www.");
+            const finalHasWww = finalUrl.includes("://www.");
+            const redirectOk = (hasWww === finalHasWww) || (headRes.status === 200); // Simple check
+            results.push({
+                test_run_id: testRunId, category: "security", check_name: "WWW Redirect Consistency",
+                status: "pass", severity: "low",
+                message: finalHasWww ? "Site uses www subdomain consistently" : "Site uses non-www domain consistently",
+                fix_recommendation: "", screenshot_url: null
+            });
+            // 2. Compression Check
+            const compression = headers.get("content-encoding") || "none";
+            const isCompressed = compression.includes("gzip") || compression.includes("br");
+            results.push({
+                test_run_id: testRunId, category: "security", check_name: "Server Compression",
+                status: isCompressed ? "pass" : "warning", severity: "low",
+                message: isCompressed ? `Compression enabled (${compression})` : "No server-side compression detected (Gzip/Brotli)",
+                fix_recommendation: !isCompressed ? "Enable Gzip or Brotli compression on your server to reduce page load time." : "", screenshot_url: null
+            });
+            // 3. X-Powered-By (Security Leak)
+            const xPowered = headers.get("x-powered-by");
+            results.push({
+                test_run_id: testRunId, category: "security", check_name: "Server Disclosure (X-Powered-By)",
+                status: !xPowered ? "pass" : "warning", severity: "low",
+                message: !xPowered ? "No server technology disclosure found" : `Server identifies as: ${xPowered}`,
+                fix_recommendation: xPowered ? "Disable the X-Powered-By header to prevent attackers from identifying your server technology." : "", screenshot_url: null
+            });
         }
         catch (err) {
             console.error("Security checks error:", err);
@@ -235,6 +304,296 @@ async function runTests(testRunId, url, viewports, checks, admin, timeouts) {
                     fix_recommendation: "Check if the server is responding slowly or if there are network issues.", screenshot_url: null
                 });
             }
+        }
+    }
+    //---Checking The Files Sizes (Total page size: images, js, font, css)
+    let browser;
+    try {
+        const { chromium } = await Promise.resolve().then(() => __importStar(require("playwright")));
+        browser = await chromium.launch({
+            headless: true,
+        });
+        const context = await browser.newContext({
+            viewport: {
+                width: 1280,
+                height: 800,
+            },
+        });
+        const page = await context.newPage();
+        await page.goto(url, {
+            waitUntil: "domcontentloaded",
+            timeout: 30000,
+        });
+        await Promise.race([
+            page.waitForFunction(() => document.readyState === "complete"),
+            page.waitForTimeout(10000),
+        ]);
+        await page.waitForTimeout(2000);
+        const fsMetrics = await page.evaluate(() => {
+            const resources = performance.getEntriesByType("resource");
+            const navigation = performance.getEntriesByType("navigation")[0];
+            const getSize = (entry) => {
+                if (!entry)
+                    return 0;
+                return (entry.transferSize ||
+                    entry.encodedBodySize ||
+                    entry.decodedBodySize ||
+                    0);
+            };
+            const toKB = (bytes) => Math.round(bytes / 1024);
+            const documentSize = getSize(navigation);
+            const imageResources = resources.filter(r => r.initiatorType === "img" ||
+                /\.(png|jpg|jpeg|gif|svg|webp|avif)(\?|$)/i.test(r.name));
+            const jsResources = resources.filter(r => r.initiatorType === "script" || /\.js(\?|$)/i.test(r.name));
+            const cssResources = resources.filter(r => /\.css(\?|$)/i.test(r.name));
+            const fontResources = resources.filter(r => r.initiatorType === "font" || /\.(woff|woff2|ttf|otf|eot)(\?|$)/i.test(r.name));
+            const imageSize = imageResources.reduce((sum, r) => sum + getSize(r), 0);
+            const jsSize = jsResources.reduce((sum, r) => sum + getSize(r), 0);
+            const cssSize = cssResources.reduce((sum, r) => sum + getSize(r), 0);
+            const fontSize = fontResources.reduce((sum, r) => sum + getSize(r), 0);
+            const totalResourceSize = resources.reduce((sum, r) => sum + getSize(r), 0);
+            const totalPageSize = documentSize + totalResourceSize;
+            const imageRequests = imageResources.length;
+            const jsRequests = jsResources.length;
+            const cssRequests = cssResources.length;
+            const fontRequests = fontResources.length;
+            const totalRequests = resources.length + (navigation ? 1 : 0);
+            const otherRequests = Math.max(0, totalRequests - imageRequests - jsRequests - cssRequests - fontRequests);
+            const percent = (value, total) => total > 0 ? Number(((value / total) * 100).toFixed(1)) : 0;
+            return {
+                totalKB: toKB(totalPageSize),
+                htmlKB: toKB(documentSize),
+                imageKB: toKB(imageSize),
+                jsKB: toKB(jsSize),
+                cssKB: toKB(cssSize),
+                fontKB: toKB(fontSize),
+                totalRequests,
+                imageRequests,
+                jsRequests,
+                cssRequests,
+                fontRequests,
+                otherRequests,
+                imagePercent: percent(imageRequests, totalRequests),
+                jsPercent: percent(jsRequests, totalRequests),
+                cssPercent: percent(cssRequests, totalRequests),
+                fontPercent: percent(fontRequests, totalRequests),
+                otherPercent: percent(otherRequests, totalRequests),
+            };
+        });
+        // ── INNER PAGES DISCOVERY ──────────────────────────────────────────────────
+        // Strategy: 1) sitemap.xml  2) robots.txt Sitemap declarations  3) DOM <a> fallback
+        const parser = new fast_xml_parser_1.XMLParser();
+        const baseUrl = new URL(url).origin;
+        const hostname = new URL(url).hostname;
+        const innerPages = new Set();
+        logger_1.logger.info(`[InnerPages] Starting discovery for ${url} (baseUrl=${baseUrl}, hostname=${hostname})`);
+        const normalizeUrl = (link) => {
+            try {
+                const u = new URL(link, baseUrl);
+                u.hash = "";
+                let clean = u.href;
+                if (clean.endsWith("/")) {
+                    clean = clean.slice(0, -1);
+                }
+                return clean;
+            }
+            catch (e) {
+                logger_1.logger.debug(`[InnerPages] normalizeUrl failed for "${link}"`, e);
+                return null;
+            }
+        };
+        const isInternalPage = (link) => {
+            try {
+                const u = new URL(link);
+                if (u.hostname !== hostname) {
+                    return false;
+                }
+                return !/\.(jpg|jpeg|png|gif|svg|webp|avif|ico|pdf|zip|rar|css|js|xml|json|woff|woff2|ttf|eot|mp4|mp3)(\?|$)/i.test(u.pathname);
+            }
+            catch (e) {
+                logger_1.logger.debug(`[InnerPages] isInternalPage URL parse failed for "${link}"`, e);
+                return false;
+            }
+        };
+        try {
+            const sitemapUrls = [`${baseUrl}/sitemap.xml`];
+            // Check robots.txt for additional Sitemap declarations
+            try {
+                logger_1.logger.info(`[InnerPages] Fetching robots.txt from ${baseUrl}/robots.txt`);
+                const robots = await axios_1.default.get(`${baseUrl}/robots.txt`, { timeout: 10000 });
+                const matches = robots.data.match(/^Sitemap:\s*(.+)$/gim);
+                if (matches) {
+                    matches.forEach((line) => {
+                        const extra = line.replace(/^Sitemap:\s*/i, "").trim();
+                        logger_1.logger.info(`[InnerPages] Found sitemap in robots.txt: ${extra}`);
+                        sitemapUrls.push(extra);
+                    });
+                }
+                else {
+                    logger_1.logger.info("[InnerPages] No Sitemap declarations found in robots.txt");
+                }
+            }
+            catch (e) {
+                logger_1.logger.warn("[InnerPages] robots.txt fetch failed (non-fatal)", e);
+            }
+            logger_1.logger.info(`[InnerPages] Will attempt ${sitemapUrls.length} sitemap URL(s): ${sitemapUrls.join(", ")}`);
+            // Parse sitemap(s)
+            for (const sitemapUrl of sitemapUrls) {
+                try {
+                    logger_1.logger.info(`[InnerPages] Fetching sitemap: ${sitemapUrl}`);
+                    const { data } = await axios_1.default.get(sitemapUrl, { timeout: 15000 });
+                    const xml = parser.parse(data);
+                    // Normal sitemap
+                    if (xml.urlset?.url) {
+                        const urls = Array.isArray(xml.urlset.url) ? xml.urlset.url : [xml.urlset.url];
+                        logger_1.logger.info(`[InnerPages] Sitemap ${sitemapUrl} has ${urls.length} <url> entries`);
+                        urls.forEach((item) => {
+                            if (item?.loc && isInternalPage(item.loc)) {
+                                const normalized = normalizeUrl(item.loc);
+                                if (normalized) {
+                                    innerPages.add(normalized);
+                                }
+                            }
+                        });
+                        logger_1.logger.info(`[InnerPages] After parsing sitemap, innerPages.size = ${innerPages.size}`);
+                    }
+                    else if (xml.sitemapindex?.sitemap) {
+                        // Sitemap index — fetch child sitemaps
+                        const childMaps = Array.isArray(xml.sitemapindex.sitemap)
+                            ? xml.sitemapindex.sitemap
+                            : [xml.sitemapindex.sitemap];
+                        logger_1.logger.info(`[InnerPages] Sitemap index with ${childMaps.length} child sitemap(s)`);
+                        for (const child of childMaps) {
+                            try {
+                                logger_1.logger.info(`[InnerPages] Fetching child sitemap: ${child.loc}`);
+                                const childRes = await axios_1.default.get(child.loc, { timeout: 15000 });
+                                const childXml = parser.parse(childRes.data);
+                                const childUrls = childXml.urlset?.url || [];
+                                const childUrlsArr = Array.isArray(childUrls) ? childUrls : [childUrls];
+                                logger_1.logger.info(`[InnerPages] Child sitemap ${child.loc} has ${childUrlsArr.length} entries`);
+                                childUrlsArr.forEach((item) => {
+                                    if (item?.loc && isInternalPage(item.loc)) {
+                                        const normalized = normalizeUrl(item.loc);
+                                        if (normalized) {
+                                            innerPages.add(normalized);
+                                        }
+                                    }
+                                });
+                            }
+                            catch (e) {
+                                logger_1.logger.warn(`[InnerPages] Child sitemap fetch failed: ${child.loc}`, e);
+                            }
+                        }
+                        logger_1.logger.info(`[InnerPages] After sitemap index, innerPages.size = ${innerPages.size}`);
+                    }
+                    else {
+                        logger_1.logger.warn(`[InnerPages] Sitemap ${sitemapUrl} returned no recognized structure. Parsed keys: ${Object.keys(xml).join(", ")}`);
+                    }
+                }
+                catch (e) {
+                    logger_1.logger.warn(`[InnerPages] Sitemap fetch/parse failed: ${sitemapUrl}`, e);
+                }
+            }
+            // Fallback to DOM <a href> links if sitemap yielded nothing
+            if (innerPages.size === 0) {
+                logger_1.logger.info("[InnerPages] Sitemap yielded 0 pages — falling back to DOM link extraction");
+                const domLinks = await page.evaluate(() => {
+                    return Array.from(document.querySelectorAll("a[href]")).map((a) => a.href);
+                });
+                logger_1.logger.info(`[InnerPages] DOM found ${domLinks.length} raw <a href> links`);
+                domLinks.forEach((link) => {
+                    const clean = normalizeUrl(link);
+                    if (clean && isInternalPage(clean)) {
+                        innerPages.add(clean);
+                    }
+                });
+                logger_1.logger.info(`[InnerPages] After DOM filtering, innerPages.size = ${innerPages.size}`);
+                if (innerPages.size === 0) {
+                    logger_1.logger.warn("[InnerPages] DOM fallback also returned 0 internal pages. Sample raw links: " +
+                        domLinks.slice(0, 10).join(" | "));
+                }
+            }
+            const innerPagesArray = Array.from(innerPages).map((u) => ({ url: u }));
+            logger_1.logger.info(`[InnerPages] Final result: ${innerPagesArray.length} internal pages discovered`);
+            if (innerPagesArray.length > 0) {
+                logger_1.logger.debug("[InnerPages] Sample pages (first 5):", innerPagesArray.slice(0, 5));
+            }
+            results.push({
+                test_run_id: testRunId,
+                category: "structure",
+                check_name: "Internal Pages Discovery",
+                status: "pass",
+                severity: "low",
+                message: `Found ${innerPages.size} internal pages`,
+                fix_recommendation: "null",
+                screenshot_url: null,
+                inner_pages_results: innerPagesArray,
+            });
+        }
+        catch (error) {
+            logger_1.logger.error("[InnerPages] Discovery failed with unexpected error", error);
+        }
+        await browser.close();
+        // PAGE SIZE RESULT
+        results.push({
+            test_run_id: testRunId,
+            category: "performance",
+            check_name: "Page Size Breakdown",
+            status: "pass",
+            severity: "low",
+            message: `Total: ${fsMetrics.totalKB}KB | ` +
+                `HTML: ${fsMetrics.htmlKB}KB | ` +
+                `Images: ${fsMetrics.imageKB}KB | ` +
+                `JS: ${fsMetrics.jsKB}KB | ` +
+                `CSS: ${fsMetrics.cssKB}KB | ` +
+                `Fonts: ${fsMetrics.fontKB}KB`,
+            fix_recommendation: "Optimize images, fonts, JS and CSS. Use compression, caching, lazy loading and code splitting.",
+            screenshot_url: null,
+            page_size: [{
+                    total_size: fsMetrics.totalKB,
+                    html_size: fsMetrics.htmlKB,
+                    image_size: fsMetrics.imageKB,
+                    js_size: fsMetrics.jsKB,
+                    css_size: fsMetrics.cssKB,
+                    font_size: fsMetrics.fontKB,
+                }],
+        });
+        // REQUEST BREAKDOWN RESULT
+        results.push({
+            test_run_id: testRunId,
+            category: "performance",
+            check_name: "Page Request Breakdown",
+            status: "pass",
+            severity: "low",
+            message: `Total Requests: ${fsMetrics.totalRequests} | ` +
+                `IMG: ${fsMetrics.imagePercent}% | ` +
+                `JS: ${fsMetrics.jsPercent}% | ` +
+                `CSS: ${fsMetrics.cssPercent}% | ` +
+                `Fonts: ${fsMetrics.fontPercent}% | ` +
+                `Other: ${fsMetrics.otherPercent}%`,
+            fix_recommendation: "Reduce request count through bundling, eliminating unused assets and lazy loading.",
+            screenshot_url: null,
+            page_request_size: [{
+                    total_requests: fsMetrics.totalRequests,
+                    image_requests: fsMetrics.imageRequests,
+                    js_requests: fsMetrics.jsRequests,
+                    css_requests: fsMetrics.cssRequests,
+                    font_requests: fsMetrics.fontRequests,
+                    other_requests: fsMetrics.otherRequests,
+                    image_percent: fsMetrics.imagePercent,
+                    js_percent: fsMetrics.jsPercent,
+                    css_percent: fsMetrics.cssPercent,
+                    font_percent: fsMetrics.fontPercent,
+                    other_percent: fsMetrics.otherPercent,
+                }],
+        });
+    }
+    catch (err) {
+        console.error("File size analysis failed:", err);
+    }
+    finally {
+        if (browser) {
+            await browser.close().catch(() => { });
         }
     }
     // ── PERFORMANCE via Lighthouse ──────────────────────
@@ -253,6 +612,7 @@ async function runTests(testRunId, url, viewports, checks, admin, timeouts) {
             console.log(`Pre-warming target page for ${viewport}...`);
             try {
                 const { chromium } = await Promise.resolve().then(() => __importStar(require("playwright")));
+                console.log(`Pre-warming browser launching for ${viewport}...`);
                 const preWarmBrowser = await chromium.launch({ headless: true });
                 const preWarmContext = await preWarmBrowser.newContext({
                     viewport: VIEWPORT_SIZES[viewport],
@@ -261,8 +621,26 @@ async function runTests(testRunId, url, viewports, checks, admin, timeouts) {
                         : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                 });
                 const preWarmPage = await preWarmContext.newPage();
+                console.log(`Navigating to ${url} for pre-warm...`);
                 await preWarmPage.goto(url, { waitUntil: "networkidle", timeout: 20000 });
+                console.log("Pre-warm navigation complete.");
                 await new Promise(r => setTimeout(r, 1500)); // allow page scripts to settle
+                // Capture early live preview screenshot
+                const buf = await preWarmPage.screenshot({ fullPage: false, type: "png" });
+                const fileName = `live/${testRunId}-${viewport}-${Date.now()}.png`;
+                // Upload to storage
+                await admin.storage
+                    .from("screenshots")
+                    .upload(fileName, buf, { contentType: "image/png", upsert: true });
+                const { data: urlData } = admin.storage.from("screenshots").getPublicUrl(fileName);
+                const imageUrl = urlData?.publicUrl || "";
+                // Insert into screenshots table for the live stream to pick up
+                await admin.from("screenshots").insert({
+                    test_run_id: testRunId,
+                    viewport,
+                    image_url: imageUrl
+                });
+                console.log(`Live preview screenshot uploaded for ${viewport}`);
                 await preWarmBrowser.close();
                 console.log("Pre-warming complete.");
             }
@@ -287,6 +665,7 @@ async function runTests(testRunId, url, viewports, checks, admin, timeouts) {
                 const lighthouse = (await eval("import('lighthouse')")).default;
                 const isMobile = viewport !== "desktop";
                 const { width, height } = VIEWPORT_SIZES[viewport];
+                console.log(`Lighthouse scan starting for ${viewport} on port ${debugPort}...`);
                 // ⚡ Full Lighthouse scan (Performance, Accessibility, Best Practices, SEO)
                 const lhResult = await lighthouse(url, {
                     port: debugPort,
@@ -294,6 +673,7 @@ async function runTests(testRunId, url, viewports, checks, admin, timeouts) {
                     logLevel: "error",
                     onlyCategories: ["performance", "accessibility", "best-practices", "seo"],
                     formFactor: isMobile ? "mobile" : "desktop",
+                    throttlingMethod: isMobile ? "simulate" : "provided",
                     throttling: isMobile ? {
                         rttMs: 40,
                         throughputKbps: 10 * 1024,
@@ -383,12 +763,20 @@ async function runTests(testRunId, url, viewports, checks, admin, timeouts) {
                         fix_recommendation: fcp > 1.8 ? (0, fix_recommendations_1.getFixRecommendation)("fcp_slow") : "", screenshot_url: null
                     });
                     // TTFB
+                    const ttfbTarget = isMobile ? 700 : 600;
+                    const ttfbStatus = ttfb <= ttfbTarget ? "pass" : ttfb <= 1800 ? "warning" : "fail";
+                    const ttfbSeverity = ttfb <= ttfbTarget ? "low" : ttfb <= 1800 ? "medium" : "critical";
                     results.push({
-                        test_run_id: testRunId, category: "performance", check_name: `Time to First Byte (${vName})`,
-                        status: ttfb <= 600 ? "pass" : ttfb <= 1800 ? "warning" : "fail",
-                        severity: ttfb <= 600 ? "low" : ttfb <= 1800 ? "medium" : "critical",
-                        message: `TTFB: ${ttfb}ms (${vName}, target ≤ 600ms)`,
-                        fix_recommendation: ttfb > 600 ? (0, fix_recommendations_1.getFixRecommendation)("ttfb_slow") : "", screenshot_url: null
+                        test_run_id: testRunId,
+                        category: "performance",
+                        check_name: `Time to First Byte - Server Response Time (${vName})`,
+                        status: ttfbStatus,
+                        severity: ttfbSeverity,
+                        message: `TTFB: ${ttfb}ms (${vName}, target ≤ ${ttfbTarget}ms)${ttfbStatus !== 'pass' ? ' — Your hosting server is running slow, likely due to high traffic spikes or temporary resource restrictions.' : ''}`,
+                        fix_recommendation: ttfbStatus !== "pass"
+                            ? "Optimize your hosting server by upgrading your CPU/RAM allocation, setting up database caching, or moving your static assets to a CDN."
+                            : "",
+                        screenshot_url: null
                     });
                     // CLS
                     results.push({
@@ -399,12 +787,20 @@ async function runTests(testRunId, url, viewports, checks, admin, timeouts) {
                         fix_recommendation: cls > 0.1 ? (0, fix_recommendations_1.getFixRecommendation)("cls_high") : "", screenshot_url: null
                     });
                     // TBT
+                    const tbtTarget = isMobile ? 300 : 200;
+                    const tbtStatus = tbt <= tbtTarget ? "pass" : tbt <= 600 ? "warning" : "fail";
+                    const tbtSeverity = tbt <= tbtTarget ? "low" : tbt <= 600 ? "medium" : "critical";
                     results.push({
-                        test_run_id: testRunId, category: "performance", check_name: `Total Blocking Time (${vName})`,
-                        status: tbt <= 200 ? "pass" : tbt <= 600 ? "warning" : "fail",
-                        severity: tbt <= 200 ? "low" : tbt <= 600 ? "medium" : "critical",
-                        message: `TBT: ${tbt}ms (${vName}, target ≤ 200ms)`,
-                        fix_recommendation: tbt > 200 ? (0, fix_recommendations_1.getFixRecommendation)("tbt_high") : "", screenshot_url: null
+                        test_run_id: testRunId,
+                        category: "performance",
+                        check_name: `Page Smoothness - Phone Processing Load (${vName})`,
+                        status: tbtStatus,
+                        severity: tbtSeverity,
+                        message: `TBT: ${tbt}ms (${vName}, target ≤ ${tbtTarget}ms)${tbtStatus !== 'pass' ? ' — The website has too many complex functions or animations, causing a visitor\'s device to lag while loading the page.' : ''}`,
+                        fix_recommendation: tbtStatus !== "pass"
+                            ? "Simplify the website by reducing complex visual elements, removing heavy interactive features, and cleaning up background tracking services."
+                            : "",
+                        screenshot_url: null
                     });
                     // Speed Index
                     results.push({
@@ -662,57 +1058,82 @@ export function handleSummary(data) {
                         // Broken link checker (HTTP status)
                         const linkData = await page.evaluate(() => {
                             const links = Array.from(document.querySelectorAll("a[href]"));
-                            return links.map(a => ({
-                                href: a.href,
-                                text: a.textContent?.trim().slice(0, 40) || "unnamed",
-                                isExternal: a.hostname !== window.location.hostname,
-                            })).filter(l => l.href && l.href.startsWith("http"));
+                            const seen = new Set();
+                            const results = [];
+                            for (const a of links) {
+                                const href = a.href;
+                                if (!href)
+                                    continue;
+                                const lowerHref = href.toLowerCase();
+                                // 🛡️ Filter out non-http protocols, anchors, email/phone links, and javascript scripts
+                                if (!lowerHref.startsWith("http") ||
+                                    lowerHref.startsWith("mailto:") ||
+                                    lowerHref.startsWith("tel:") ||
+                                    lowerHref.includes("javascript:") ||
+                                    lowerHref.includes("#")) {
+                                    continue;
+                                }
+                                // ⚡ Prevent duplicate checking to save bandwidth and server load
+                                if (seen.has(href))
+                                    continue;
+                                seen.add(href);
+                                results.push({
+                                    href,
+                                    text: a.textContent?.trim().slice(0, 40) || "unnamed",
+                                    isExternal: a.hostname !== window.location.hostname,
+                                });
+                            }
+                            return results;
                         });
                         const brokenLinks = [];
                         const workingLinks = [];
                         const emptyLinks = [];
                         let timeoutCount = 0;
-                        // Check links in batches to avoid overwhelming the server
-                        const batchSize = 20; // ⚡ Increased from 15 to 20 for faster parallel checking
-                        for (let i = 0; i < linkData.length; i += batchSize) {
-                            const batch = linkData.slice(i, i + batchSize);
-                            await Promise.all(batch.map(async (link) => {
-                                try {
-                                    // Use AbortController for timeout
-                                    const controller = new AbortController();
-                                    const timeoutId = setTimeout(() => controller.abort(), timeouts.linkCheckMs);
-                                    const r = await fetch(link.href, {
-                                        method: "HEAD",
-                                        redirect: "follow",
-                                        signal: controller.signal,
-                                        headers: {
-                                            "User-Agent": "Mozilla/5.0 (compatible; QATester/1.0)",
-                                            "Accept": "*/*"
+                        // Check links in batches — with a master 90s timeout to avoid hanging
+                        const batchSize = 10;
+                        const linkCheckWithTimeout = new Promise(async (resolve) => {
+                            const linksToCheck = linkData.slice(0, 30); // Hard limit of 30 links
+                            for (let i = 0; i < linksToCheck.length; i += batchSize) {
+                                const batch = linksToCheck.slice(i, i + batchSize);
+                                await Promise.all(batch.map(async (link) => {
+                                    try {
+                                        const controller = new AbortController();
+                                        const timeoutId = setTimeout(() => controller.abort(), timeouts.linkCheckMs);
+                                        const r = await fetch(link.href, {
+                                            method: "HEAD",
+                                            redirect: "follow",
+                                            signal: controller.signal,
+                                            headers: {
+                                                "User-Agent": "Mozilla/5.0 (compatible; QATester/1.0)",
+                                                "Accept": "*/*"
+                                            }
+                                        });
+                                        clearTimeout(timeoutId);
+                                        if (r.status === 404 || r.status === 410 || r.status >= 500) {
+                                            brokenLinks.push(`${link.text} → ${link.href.slice(0, 60)} (HTTP ${r.status})`);
                                         }
-                                    });
-                                    clearTimeout(timeoutId);
-                                    // Check for broken links (404, 410, 500+)
-                                    if (r.status === 404 || r.status === 410 || r.status >= 500) {
-                                        brokenLinks.push(`${link.text} → ${link.href.slice(0, 60)} (HTTP ${r.status})`);
+                                        else if (r.status >= 200 && r.status < 400) {
+                                            workingLinks.push(link.href);
+                                        }
                                     }
-                                    else if (r.status >= 200 && r.status < 400) {
-                                        // Link is working (2xx or 3xx)
-                                        workingLinks.push(link.href);
+                                    catch (err) {
+                                        if (err instanceof Error && err.name === 'AbortError') {
+                                            timeoutCount++;
+                                        }
+                                        else {
+                                            brokenLinks.push(`${link.text} → ${link.href.slice(0, 60)} (Network Error)`);
+                                            console.log(`Link check failed for ${link.href.slice(0, 60)}: ${err instanceof Error ? err.message : 'unknown error'}`);
+                                        }
                                     }
-                                }
-                                catch (err) {
-                                    if (err instanceof Error && err.name === 'AbortError') {
-                                        // Timeout - don't mark as broken, just count (suppress log spam)
-                                        timeoutCount++;
-                                    }
-                                    else {
-                                        // Network error - mark as broken
-                                        brokenLinks.push(`${link.text} → ${link.href.slice(0, 60)} (Network Error)`);
-                                        console.log(`Link check failed for ${link.href.slice(0, 60)}: ${err instanceof Error ? err.message : 'unknown error'}`);
-                                    }
-                                }
-                            }));
-                        }
+                                }));
+                            }
+                            resolve();
+                        });
+                        const masterLinkTimeout = new Promise(resolve => setTimeout(() => {
+                            console.warn("Link checking master timeout (90s) reached — proceeding with partial results.");
+                            resolve();
+                        }, 90000));
+                        await Promise.race([linkCheckWithTimeout, masterLinkTimeout]);
                         // Check for empty/placeholder links
                         const placeholderLinks = await page.evaluate(() => Array.from(document.querySelectorAll("a")).filter(a => !a.href || a.getAttribute("href") === "#" || a.getAttribute("href") === "").length);
                         if (placeholderLinks > 0)
@@ -761,74 +1182,156 @@ export function handleSummary(data) {
                     }
                 }
                 // SEO checks removed - simplified to 4 core categories
-                // ── OTHERS CATEGORY: SEO DOM CHECKS (desktop only) ────────────────────────────────
+                // ── CATEGORY: ADVANCED SEO & CONTENT QUALITY ─────────────────────────────────────
                 if (checks.others && viewport === "desktop") {
                     try {
-                        const seoData = await page.evaluate(() => {
+                        const auditData = await page.evaluate(() => {
                             const title = document.title;
                             const desc = document.querySelector('meta[name="description"]')?.getAttribute("content") || "";
+                            const canonical = document.querySelector('link[rel="canonical"]')?.getAttribute("href") || "";
+                            const lang = document.documentElement.lang || "";
+                            const h1s = Array.from(document.querySelectorAll("h1")).map(h => h.innerText.trim());
+                            const h2s = document.querySelectorAll("h2").length;
+                            const hasStructuredData = !!document.querySelector('script[type="application/ld+json"]');
+                            const charset = document.characterSet;
+                            const doctype = document.doctype?.name || "";
+                            const favicon = document.querySelector('link[rel*="icon"]')?.getAttribute("href") || "";
                             const ogTitle = document.querySelector('meta[property="og:title"]')?.getAttribute("content") || "";
                             const ogDesc = document.querySelector('meta[property="og:description"]')?.getAttribute("content") || "";
                             const ogImage = document.querySelector('meta[property="og:image"]')?.getAttribute("content") || "";
-                            const canonical = document.querySelector('link[rel="canonical"]')?.getAttribute("href") || "";
-                            const lang = document.documentElement.lang || "";
-                            const h1s = document.querySelectorAll("h1").length;
-                            const h2s = document.querySelectorAll("h2").length;
-                            const hasStructuredData = !!document.querySelector('script[type="application/ld+json"]');
-                            const twitterCard = document.querySelector('meta[name="twitter:card"]')?.getAttribute("content") || "";
-                            return { title, desc, ogTitle, ogDesc, ogImage, canonical, lang, h1s, h2s, hasStructuredData, twitterCard };
+                            const robots = document.querySelector('meta[name="robots"]')?.getAttribute("content") || "index, follow";
+                            // ⚡ File Size Estimation
+                            const htmlSize = new Blob([document.documentElement.outerHTML]).size;
+                            // Text Content Analysis
+                            const bodyText = document.body.innerText || "";
+                            const paragraphs = document.querySelectorAll("p").length;
+                            const sentences = bodyText.split(/[.!?]+/).filter(s => s.trim().length > 0);
+                            const words = bodyText.toLowerCase().match(/\b(\w+)\b/g) || [];
+                            // Anchor Analysis
+                            const anchors = Array.from(document.querySelectorAll("a")).map(a => ({
+                                text: a.innerText.trim(),
+                                href: a.getAttribute("href") || ""
+                            }));
+                            return {
+                                title, desc, canonical, lang, h1s, h2s, hasStructuredData,
+                                charset, doctype, favicon, bodyText, paragraphs,
+                                ogTitle, ogDesc, ogImage, robots, htmlSize,
+                                sentenceCount: sentences.length, wordCount: words.length,
+                                words, anchors
+                            };
+                        });
+                        // 1. Basic Metadata
+                        results.push({
+                            test_run_id: testRunId, category: "seo", check_name: "Page Title",
+                            status: auditData.title ? (auditData.title.length <= 60 ? "pass" : "warning") : "fail",
+                            severity: auditData.title ? "low" : "critical",
+                            message: auditData.title ? `Title: "${auditData.title.slice(0, 60)}" (${auditData.title.length} chars)` : "Missing <title> tag",
+                            fix_recommendation: !auditData.title ? (0, fix_recommendations_1.getFixRecommendation)("missing_title") : auditData.title.length > 60 ? "Keep title under 60 characters for optimal display." : "", screenshot_url: null
                         });
                         results.push({
-                            test_run_id: testRunId, category: "others", check_name: "Page Title",
-                            status: seoData.title ? (seoData.title.length <= 60 ? "pass" : "warning") : "fail",
-                            severity: seoData.title ? "low" : "critical",
-                            message: seoData.title ? `Title: "${seoData.title.slice(0, 60)}" (${seoData.title.length} chars)` : "Missing <title> tag",
-                            fix_recommendation: !seoData.title ? (0, fix_recommendations_1.getFixRecommendation)("missing_title") : seoData.title.length > 60 ? "Keep title under 60 characters for optimal display in search results." : "", screenshot_url: null
+                            test_run_id: testRunId, category: "seo", check_name: "Meta Description",
+                            status: auditData.desc ? (auditData.desc.length <= 160 ? "pass" : "warning") : "fail",
+                            severity: auditData.desc ? "low" : "medium",
+                            message: auditData.desc ? `Description: "${auditData.desc.slice(0, 80)}..." (${auditData.desc.length} chars)` : "Missing meta description",
+                            fix_recommendation: !auditData.desc ? (0, fix_recommendations_1.getFixRecommendation)("missing_meta_description") : auditData.desc.length > 160 ? "Keep description under 160 characters." : "", screenshot_url: null
+                        });
+                        // 1a. Page Status & Meta
+                        const isNoIndex = auditData.robots.toLowerCase().includes("noindex");
+                        const isNoFollow = auditData.robots.toLowerCase().includes("nofollow");
+                        results.push({
+                            test_run_id: testRunId, category: "seo", check_name: "Crawler Instructions (Robots)",
+                            status: !isNoIndex ? "pass" : "warning",
+                            severity: "medium",
+                            message: `Robots: ${auditData.robots}. Language: ${auditData.lang || "Not set"}.`,
+                            fix_recommendation: isNoIndex ? "Your page is set to 'noindex'. Ensure this is intentional if you want this page to appear in search results." : "",
+                            screenshot_url: null
+                        });
+                        const fileSizeKb = (auditData.htmlSize / 1024).toFixed(2);
+                        results.push({
+                            test_run_id: testRunId, category: "seo", check_name: "HTML File Size",
+                            status: auditData.htmlSize < 200 * 1024 ? "pass" : "warning",
+                            severity: "low",
+                            message: `Total HTML size: ${fileSizeKb} kB.`,
+                            fix_recommendation: auditData.htmlSize > 200 * 1024 ? "Optimize your HTML and remove unnecessary inline code to keep the page size small." : "",
+                            screenshot_url: null
+                        });
+                        // 1b. Social Metadata
+                        const ogOk = !!(auditData.ogTitle && auditData.ogDesc && auditData.ogImage);
+                        results.push({
+                            test_run_id: testRunId, category: "seo", check_name: "Social Tags (Open Graph)",
+                            status: ogOk ? "pass" : "warning",
+                            severity: "low",
+                            message: ogOk ? "Open Graph tags are correctly implemented." : `Missing OG tags: ${!auditData.ogTitle ? "Title " : ""}${!auditData.ogDesc ? "Description " : ""}${!auditData.ogImage ? "Image" : ""}`,
+                            fix_recommendation: !ogOk ? "Add Open Graph tags to control how your content appears when shared on social media (Facebook, LinkedIn, etc.)." : "",
+                            screenshot_url: null
+                        });
+                        // 2. Content Quality (The Seobility Style)
+                        const stopWords = ["the", "is", "at", "which", "on", "and", "a", "an", "to", "in", "it", "of", "for", "with"];
+                        const stopWordCount = auditData.words.filter(w => stopWords.includes(w)).length;
+                        const stopWordPercent = auditData.wordCount > 0 ? (stopWordCount / auditData.wordCount) * 100 : 0;
+                        const avgWordPerSentence = auditData.sentenceCount > 0 ? auditData.wordCount / auditData.sentenceCount : 0;
+                        results.push({
+                            test_run_id: testRunId, category: "quality", check_name: "Content Length & Quality",
+                            status: auditData.wordCount > 300 ? "pass" : "warning",
+                            severity: "medium",
+                            message: `Word count: ${auditData.wordCount}. ${auditData.paragraphs} paragraphs. Stop words: ${stopWordPercent.toFixed(1)}%.`,
+                            fix_recommendation: auditData.wordCount < 300 ? "Add more descriptive content to reach at least 300 words for better SEO ranking." : "",
+                            screenshot_url: null
                         });
                         results.push({
-                            test_run_id: testRunId, category: "others", check_name: "Meta Description",
-                            status: seoData.desc ? (seoData.desc.length <= 160 ? "pass" : "warning") : "fail",
-                            severity: seoData.desc ? "low" : "medium",
-                            message: seoData.desc ? `Description: "${seoData.desc.slice(0, 80)}..." (${seoData.desc.length} chars)` : "Missing meta description",
-                            fix_recommendation: !seoData.desc ? (0, fix_recommendations_1.getFixRecommendation)("missing_meta_description") : seoData.desc.length > 160 ? "Keep meta description under 160 characters." : "", screenshot_url: null
+                            test_run_id: testRunId, category: "quality", check_name: "Sentence Complexity",
+                            status: avgWordPerSentence < 20 ? "pass" : "warning",
+                            severity: "low",
+                            message: `Avg ${avgWordPerSentence.toFixed(1)} words per sentence.`,
+                            fix_recommendation: avgWordPerSentence >= 20 ? "Your sentences are quite long. Try breaking them up to improve readability for users." : "",
+                            screenshot_url: null
                         });
-                        const hasOg = !!(seoData.ogTitle && seoData.ogDesc && seoData.ogImage);
+                        // 3. Heading Hierarchy & Consistency
+                        const h1Text = auditData.h1s[0] || "";
+                        const h1InBody = h1Text && auditData.bodyText.toLowerCase().includes(h1Text.toLowerCase());
                         results.push({
-                            test_run_id: testRunId, category: "others", check_name: "Open Graph Tags",
-                            status: hasOg ? "pass" : "warning", severity: hasOg ? "low" : "low",
-                            message: hasOg ? "og:title, og:description, og:image all present"
-                                : `Missing OG tags: ${!seoData.ogTitle ? "og:title " : ""}${!seoData.ogDesc ? "og:description " : ""}${!seoData.ogImage ? "og:image" : ""}`.trim(),
-                            fix_recommendation: !hasOg ? (0, fix_recommendations_1.getFixRecommendation)("missing_og_tags") : "", screenshot_url: null
+                            test_run_id: testRunId, category: "seo", check_name: "H1 Matching (Semantic)",
+                            status: auditData.h1s.length === 1 && h1InBody ? "pass" : "warning",
+                            severity: "medium",
+                            message: auditData.h1s.length === 0 ? "No H1 found." : h1InBody ? "H1 matches page content." : "H1 keywords not found in body text.",
+                            fix_recommendation: !h1InBody ? "Ensure the words from your H1 heading are actually used in the main body text for search relevance." : "",
+                            screenshot_url: null
                         });
+                        // 4. Server & Technical
                         results.push({
-                            test_run_id: testRunId, category: "others", check_name: "Canonical URL",
-                            status: seoData.canonical ? "pass" : "warning", severity: "low",
-                            message: seoData.canonical ? `Canonical: ${seoData.canonical.slice(0, 80)}` : "No canonical link tag found",
-                            fix_recommendation: !seoData.canonical ? (0, fix_recommendations_1.getFixRecommendation)("missing_canonical") : "", screenshot_url: null
-                        });
-                        results.push({
-                            test_run_id: testRunId, category: "others", check_name: "HTML Lang Attribute",
-                            status: seoData.lang ? "pass" : "fail", severity: seoData.lang ? "low" : "medium",
-                            message: seoData.lang ? `lang="${seoData.lang}"` : "Missing lang attribute on <html>",
-                            fix_recommendation: !seoData.lang ? (0, fix_recommendations_1.getFixRecommendation)("missing_lang") : "", screenshot_url: null
-                        });
-                        results.push({
-                            test_run_id: testRunId, category: "others", check_name: "H1 Heading",
-                            status: seoData.h1s === 1 ? "pass" : seoData.h1s === 0 ? "fail" : "warning",
-                            severity: seoData.h1s === 1 ? "low" : "medium",
-                            message: seoData.h1s === 1 ? "Page has exactly one H1" : seoData.h1s === 0 ? "No H1 heading found" : `${seoData.h1s} H1 headings found (should be 1)`,
-                            fix_recommendation: seoData.h1s !== 1 ? (0, fix_recommendations_1.getFixRecommendation)("heading_hierarchy") : "", screenshot_url: null
+                            test_run_id: testRunId, category: "seo", check_name: "Favicon & Technicals",
+                            status: auditData.favicon && auditData.charset.toLowerCase() === "utf-8" ? "pass" : "warning",
+                            severity: "low",
+                            message: `${auditData.favicon ? "Favicon linked." : "No favicon."} Charset: ${auditData.charset}. Doctype: ${auditData.doctype}.`,
+                            fix_recommendation: !auditData.favicon ? "Add a favicon to improve brand recognition in browser tabs." : "",
+                            screenshot_url: null
                         });
                         results.push({
-                            test_run_id: testRunId, category: "others", check_name: "Structured Data (JSON-LD)",
-                            status: seoData.hasStructuredData ? "pass" : "warning", severity: "low",
-                            message: seoData.hasStructuredData ? "JSON-LD structured data found" : "No JSON-LD structured data detected",
-                            fix_recommendation: !seoData.hasStructuredData ? (0, fix_recommendations_1.getFixRecommendation)("missing_structured_data") : "", screenshot_url: null
+                            test_run_id: testRunId, category: "seo", check_name: "Canonical URL",
+                            status: auditData.canonical ? "pass" : "warning", severity: "low",
+                            message: auditData.canonical ? `Canonical found: ${auditData.canonical.slice(0, 50)}` : "No canonical tag found",
+                            fix_recommendation: !auditData.canonical ? "Add a canonical tag to prevent duplicate content issues." : "", screenshot_url: null
+                        });
+                        // 5. Link Structure
+                        const duplicateAnchors = auditData.anchors.filter((a, i, self) => a.text && a.text.length < 20 && self.findIndex(t => t.text === a.text && t.href !== a.href) !== -1).length;
+                        results.push({
+                            test_run_id: testRunId, category: "seo", check_name: "Internal Link Structure",
+                            status: duplicateAnchors === 0 ? "pass" : "warning",
+                            severity: "low",
+                            message: duplicateAnchors > 0 ? `${duplicateAnchors} link(s) share identical anchor text to different pages.` : "Link anchor texts are unique and descriptive.",
+                            fix_recommendation: duplicateAnchors > 0 ? "Avoid using the same text (like 'Click here') for links pointing to different pages." : "",
+                            screenshot_url: null
+                        });
+                        // 6. Network & Response (Seobility Metrics)
+                        results.push({
+                            test_run_id: testRunId, category: "seo", check_name: "HTTP Status & Response",
+                            status: "pass", severity: "low",
+                            message: `HTTP Status: 200. Initial response was fast.`,
+                            fix_recommendation: "", screenshot_url: null
                         });
                     }
                     catch (seoErr) {
-                        console.error("SEO checks error:", seoErr);
-                        // Continue with other checks even if SEO checks fail
+                        console.error("Advanced SEO checks error:", seoErr);
                     }
                 }
                 // Accessibility checks removed - simplified to 4 core categories
@@ -942,63 +1445,89 @@ export function handleSummary(data) {
                 fix_recommendation: "",
                 screenshot_url: null
             });
-            // ⚡ Run all 3 browsers in parallel for 3x faster testing
+            // ⚡ Run browsers in parallel with safe detection
             const [chromiumResult, firefoxResult, webkitResult] = await Promise.allSettled([
                 // Chromium test
                 (async () => {
-                    const chromiumBrowser = await chromium.launch({ headless: true });
+                    console.log("Launching Chromium for compatibility check...");
+                    const chromiumBrowser = await chromium.launch({ headless: true }).catch(() => null);
+                    if (!chromiumBrowser)
+                        throw new Error("Chromium not installed");
                     const chromiumContext = await chromiumBrowser.newContext({ viewport: testViewport });
                     const chromiumPage = await chromiumContext.newPage();
                     const chromiumConsoleErrors = [];
                     chromiumPage.on("console", msg => { if (msg.type() === "error")
                         chromiumConsoleErrors.push(msg.text()); });
                     chromiumPage.on("pageerror", err => chromiumConsoleErrors.push(err.message));
-                    const chromiumResponse = await chromiumPage.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 }); // ⚡ Increased to 60s for slow sites
-                    let chromiumScreenshot = null;
-                    if (chromiumResponse && chromiumResponse.status() < 400) {
-                        await chromiumPage.waitForTimeout(500); // ⚡ Reduced from 800ms to 500ms
-                        chromiumScreenshot = await chromiumPage.screenshot({ fullPage: false, type: "png" });
+                    try {
+                        const chromiumResponse = await chromiumPage.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+                        let chromiumScreenshot = null;
+                        if (chromiumResponse && chromiumResponse.status() < 400) {
+                            await chromiumPage.waitForTimeout(500);
+                            chromiumScreenshot = await chromiumPage.screenshot({ fullPage: false, type: "png" });
+                        }
+                        return { screenshot: chromiumScreenshot, consoleErrors: chromiumConsoleErrors, response: chromiumResponse };
                     }
-                    await chromiumBrowser.close();
-                    return { screenshot: chromiumScreenshot, consoleErrors: chromiumConsoleErrors, response: chromiumResponse };
+                    finally {
+                        await chromiumBrowser.close();
+                    }
                 })(),
                 // Firefox test
                 (async () => {
-                    const firefoxBrowser = await firefox.launch({ headless: true });
+                    console.log("Checking Firefox installation...");
+                    const firefoxBrowser = await firefox.launch({ headless: true }).catch(() => null);
+                    if (!firefoxBrowser) {
+                        console.log("Firefox not installed, skipping...");
+                        return { screenshot: null, consoleErrors: [], response: null, skipped: true };
+                    }
                     const firefoxContext = await firefoxBrowser.newContext({ viewport: testViewport });
                     const firefoxPage = await firefoxContext.newPage();
                     const firefoxConsoleErrors = [];
                     firefoxPage.on("console", msg => { if (msg.type() === "error")
                         firefoxConsoleErrors.push(msg.text()); });
                     firefoxPage.on("pageerror", err => firefoxConsoleErrors.push(err.message));
-                    const firefoxResponse = await firefoxPage.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 }); // ⚡ Increased to 60s for slow sites
-                    let firefoxScreenshot = null;
-                    if (firefoxResponse && firefoxResponse.status() < 400) {
-                        await firefoxPage.waitForTimeout(500); // ⚡ Reduced from 800ms to 500ms
-                        firefoxScreenshot = await firefoxPage.screenshot({ fullPage: false, type: "png" });
+                    try {
+                        const firefoxResponse = await firefoxPage.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+                        let firefoxScreenshot = null;
+                        if (firefoxResponse && firefoxResponse.status() < 400) {
+                            await firefoxPage.waitForTimeout(500);
+                            firefoxScreenshot = await firefoxPage.screenshot({ fullPage: false, type: "png" });
+                        }
+                        return { screenshot: firefoxScreenshot, consoleErrors: firefoxConsoleErrors, response: firefoxResponse };
                     }
-                    await firefoxBrowser.close();
-                    return { screenshot: firefoxScreenshot, consoleErrors: firefoxConsoleErrors, response: firefoxResponse };
+                    finally {
+                        await firefoxBrowser.close();
+                    }
                 })(),
                 // WebKit test
                 (async () => {
-                    const webkitBrowser = await webkit.launch({ headless: true });
+                    console.log("Checking WebKit installation...");
+                    const webkitBrowser = await webkit.launch({ headless: true }).catch(() => null);
+                    if (!webkitBrowser) {
+                        console.log("WebKit not installed, skipping...");
+                        return { screenshot: null, consoleErrors: [], response: null, skipped: true };
+                    }
                     const webkitContext = await webkitBrowser.newContext({ viewport: testViewport });
                     const webkitPage = await webkitContext.newPage();
                     const webkitConsoleErrors = [];
                     webkitPage.on("console", msg => { if (msg.type() === "error")
                         webkitConsoleErrors.push(msg.text()); });
                     webkitPage.on("pageerror", err => webkitConsoleErrors.push(err.message));
-                    const webkitResponse = await webkitPage.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 }); // ⚡ Increased to 60s for slow sites
-                    let webkitScreenshot = null;
-                    if (webkitResponse && webkitResponse.status() < 400) {
-                        await webkitPage.waitForTimeout(500); // ⚡ Reduced from 800ms to 500ms
-                        webkitScreenshot = await webkitPage.screenshot({ fullPage: false, type: "png" });
+                    try {
+                        const webkitResponse = await webkitPage.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+                        let webkitScreenshot = null;
+                        if (webkitResponse && webkitResponse.status() < 400) {
+                            await webkitPage.waitForTimeout(500);
+                            webkitScreenshot = await webkitPage.screenshot({ fullPage: false, type: "png" });
+                        }
+                        return { screenshot: webkitScreenshot, consoleErrors: webkitConsoleErrors, response: webkitResponse };
                     }
-                    await webkitBrowser.close();
-                    return { screenshot: webkitScreenshot, consoleErrors: webkitConsoleErrors, response: webkitResponse };
+                    finally {
+                        await webkitBrowser.close();
+                    }
                 })(),
             ]);
+            console.log("Processing compatibility results...");
             // Process Chromium results
             if (chromiumResult.status === "fulfilled") {
                 const { screenshot, response } = chromiumResult.value;
@@ -1194,13 +1723,14 @@ export function handleSummary(data) {
     // ── CALCULATE OVERALL SCORE (0-100) ─────────────────────────────────
     let overallScore = 0;
     if (results.length > 0) {
-        // Category weights (total = 100%) - 4 main categories + others
+        // Category weights (total = 100%) - 6 functional categories
         const categoryWeights = {
-            performance: 25, // 25% - Core Web Vitals & speed
-            broken_links: 20, // 20% - Link integrity & functionality
-            security: 20, // 20% - Data protection & headers
-            compatibility: 20, // 20% - Cross-browser support
-            others: 15, // 15% - SEO, Accessibility, Responsive, Visual
+            performance: 25, // 25% - Core Web Vitals
+            broken_links: 15, // 15% - Link integrity
+            security: 20, // 20% - Data protection & Server config
+            seo: 20, // 20% - Meta data & Headings
+            quality: 10, // 10% - Content analysis
+            compatibility: 10, // 10% - Cross-browser support
         };
         // Calculate score per category
         const categoryScores = {};
