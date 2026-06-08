@@ -1191,6 +1191,7 @@ function SummaryTabContent({ report }: { report: TestReport }) {
 }
 
 function PerformanceTabContent({ results }: { results: TestResult[] }) {
+  console.log("results of performance", results);
   const [showDetails, setShowDetails] = useState(false);
   const viewports = ["Mobile", "Desktop", "Tablet"];
 
