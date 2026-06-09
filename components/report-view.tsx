@@ -11,7 +11,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { CheckCircle2, XCircle, AlertTriangle, Download, Globe, Clock, Monitor, Smartphone, Tablet, Wrench, RefreshCw, ListTodo, FileSearch, HelpCircle, Shield, ChevronDown, Layers, Info, Square } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import type { TestReport, TestResult, Severity, ResultStatus, Category, PageSize, CwvEntry } from "@/types";
+import type { TestReport, TestResult, Severity, ResultStatus, Category, PageSize, CwvEntry, ThirdPartyAnalysis, ThirdPartyEntity } from "@/types";
 interface ReportViewProps { report: TestReport; }
 
 export function ReportView({ report }: ReportViewProps) {
@@ -661,13 +661,13 @@ export function ReportView({ report }: ReportViewProps) {
           <TabsTrigger value="performance" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">Performance</TabsTrigger>
           <TabsTrigger value="inner_pages" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">Inner Pages</TabsTrigger>
           <TabsTrigger value="broken_links" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">Broken Links</TabsTrigger>
-          <TabsTrigger value="compatibility" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">Structure</TabsTrigger>
+          <TabsTrigger value="compatibility" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">Cross-Browser</TabsTrigger>
           <TabsTrigger value="security" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">Security</TabsTrigger>
-          <TabsTrigger value="others" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">CrUX</TabsTrigger>
-          <TabsTrigger value="waterfall" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all opacity-50 cursor-not-allowed">Waterfall</TabsTrigger>
+          <TabsTrigger value="others" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">Other</TabsTrigger>
+          {/* <TabsTrigger value="waterfall" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all opacity-50 cursor-not-allowed">Waterfall</TabsTrigger>
           <TabsTrigger value="video" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all opacity-50 cursor-not-allowed">Video</TabsTrigger>
           <TabsTrigger value="history" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all opacity-50 cursor-not-allowed">History</TabsTrigger>
-          <TabsTrigger value="alerts" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all opacity-50 cursor-not-allowed">Alerts</TabsTrigger>
+          <TabsTrigger value="alerts" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all opacity-50 cursor-not-allowed">Alerts</TabsTrigger> */}
         </TabsList>
 
         <div className="relative mt-4">
@@ -1209,9 +1209,31 @@ function PerformanceTabContent({ results }: { results: TestResult[] }) {
 
   const vpOrder = ["desktop", "tablet", "mobile"] as const;
 
+  // Separate third-party analysis results from regular metrics
+  const thirdPartyResults = results.filter(r => r.check_name.startsWith("Third-Party Impact Analysis"));
+  const metricResults = results.filter(r => !r.check_name.startsWith("Third-Party Impact Analysis"));
+
   return (
     <div className="space-y-16 py-4">
-      <div className="flex items-center justify-between">
+     
+
+      {/* ── Third-Party Impact Analysis ── */}
+      {thirdPartyResults.length > 0 && (
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <h2 className="text-xl font-medium text-slate-700">Third-Party Impact Analysis</h2>
+            <p className="text-xs text-slate-400">
+              Breaks down whether poor performance is caused by your own code or by external services (analytics, CDNs, image hosts, etc.)
+            </p>
+          </div>
+          <div className="space-y-4">
+            {thirdPartyResults.map(r => (
+              <ThirdPartyAnalysisCard key={r.id} result={r} />
+            ))}
+          </div>
+        </div>
+      )}
+       <div className="flex items-center justify-between">
         <div className="space-y-1">
           <h2 className="text-xl font-medium text-slate-700">Performance Metrics</h2>
           <p className="text-xs text-slate-400">The following metrics are generated using Lighthouse Performance data.</p>
@@ -1224,7 +1246,10 @@ function PerformanceTabContent({ results }: { results: TestResult[] }) {
       </div>
 
       {vpOrder.map(vp => {
-        const vpResults = byViewport[vp];
+        const vpResults = metricResults.filter(r =>
+          r.check_name.toLowerCase().includes(`(${vp})`) ||
+          (vp === "desktop" && !["mobile", "tablet"].some(v => r.check_name.toLowerCase().includes(`(${v})`)) && !viewports.some(v => r.check_name.toLowerCase().includes(`(${v.toLowerCase()})`) ))
+        );
         if (vpResults.length === 0) return null;
 
         const mainMetrics = [
@@ -1269,7 +1294,7 @@ function PerformanceTabContent({ results }: { results: TestResult[] }) {
         };
 
         return (
-          <div key={vp} className="space-y-12">
+          <div key={vp} className="space-y-4">
             <div className="flex items-center gap-2 border-b pb-2">
               {vp === "mobile" ? <Smartphone className="h-5 w-5 text-slate-400" /> : vp === "tablet" ? <Tablet className="h-5 w-5 text-slate-400" /> : <Monitor className="h-5 w-5 text-slate-400" />}
               <h3 className="text-lg font-semibold text-slate-600 capitalize">{vp} Performance</h3>
@@ -1706,6 +1731,215 @@ function InnerPagesTabContent({ results }: { results: TestResult[] }) {
             <div className="flex items-center gap-1.5"><span className="bg-slate-100 text-slate-500 text-[9px] font-bold px-1.5 py-0.5 rounded-full">lab</span> Lighthouse simulation</div>
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+// ── THIRD-PARTY ANALYSIS CARD ─────────────────────────────────────────────────
+
+const ENTITY_TYPE_COLORS: Record<string, string> = {
+  analytics: "bg-purple-100 text-purple-700 border-purple-200",
+  cdn:        "bg-blue-100 text-blue-700 border-blue-200",
+  database:   "bg-orange-100 text-orange-700 border-orange-200",
+  media:      "bg-pink-100 text-pink-700 border-pink-200",
+  ads:        "bg-red-100 text-red-700 border-red-200",
+  social:     "bg-sky-100 text-sky-700 border-sky-200",
+  other:      "bg-slate-100 text-slate-600 border-slate-200",
+};
+
+const ENTITY_TYPE_ICONS: Record<string, string> = {
+  analytics: "📊",
+  cdn:        "🌐",
+  database:   "🗄️",
+  media:      "🖼️",
+  ads:        "📣",
+  social:     "👥",
+  other:      "🔌",
+};
+
+const VERDICT_CONFIG = {
+  clean: {
+    bg: "bg-emerald-50",
+    border: "border-emerald-200",
+    badge: "bg-emerald-100 text-emerald-700 border-emerald-300",
+    icon: "",
+    label: "Site is Clean",
+    barColor: "bg-emerald-400",
+  },
+  site_issue: {
+    bg: "bg-red-50",
+    border: "border-red-200",
+    badge: "bg-red-100 text-red-700 border-red-300",
+    icon: "❌",
+    label: "Your Code is the Issue",
+    barColor: "bg-red-400",
+  },
+  third_party_issue: {
+    bg: "bg-amber-50",
+    border: "border-amber-200",
+    badge: "bg-amber-100 text-amber-700 border-amber-300",
+    icon: "⚠️",
+    label: "Third-Party Services Causing Issues",
+    barColor: "bg-amber-400",
+  },
+  mixed: {
+    bg: "bg-orange-50",
+    border: "border-orange-200",
+    badge: "bg-orange-100 text-orange-700 border-orange-300",
+    icon: "🔀",
+    label: "Mixed: Both Site & Third-Party Issues",
+    barColor: "bg-orange-400",
+  },
+};
+
+function ThirdPartyAnalysisCard({ result }: { result: TestResult }) {
+  const [expanded, setExpanded] = useState(false);
+  const analysis = result.third_party_analysis;
+  if (!analysis) return <ResultCard result={result} />;
+
+  const cfg = VERDICT_CONFIG[analysis.verdict];
+  const totalTbt = analysis.firstPartyTbt + analysis.thirdPartyTbt;
+  const firstPartyPercent = totalTbt > 0 ? Math.round((analysis.firstPartyTbt / totalTbt) * 100) : 0;
+
+  return (
+    <div className={`rounded-xl border-2 ${cfg.border} ${cfg.bg} overflow-hidden shadow-sm`}>
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-4 border-b border-current/10">
+        <div className="flex items-center gap-3">
+          <span className="text-2xl">{cfg.icon}</span>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-bold text-slate-800">{result.check_name}</span>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${cfg.badge}`}>
+                {cfg.label}
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5">{result.message}</p>
+          </div>
+        </div>
+        <button
+          onClick={() => setExpanded(e => !e)}
+          className="flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-700 bg-white/70 px-3 py-1.5 rounded-lg border border-slate-200 transition-all hover:bg-white"
+        >
+          {expanded ? "Hide" : "Details"}
+          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} />
+        </button>
+      </div>
+
+      {/* TBT split bar */}
+      <div className="px-5 py-4">
+        <div className="flex items-center justify-between text-xs text-slate-500 mb-1.5">
+          <span className="font-semibold">Blocking Time Split</span>
+          <span className="tabular-nums">{totalTbt}ms total</span>
+        </div>
+        <div className="h-3 rounded-full overflow-hidden bg-slate-200 flex">
+          <div
+            className="h-full bg-blue-500 transition-all"
+            style={{ width: `${firstPartyPercent}%` }}
+            title={`Your code: ${analysis.firstPartyTbt}ms`}
+          />
+          <div
+            className={`h-full ${cfg.barColor} transition-all`}
+            style={{ width: `${analysis.thirdPartyTbtPercent}%` }}
+            title={`Third parties: ${analysis.thirdPartyTbt}ms`}
+          />
+        </div>
+        <div className="flex items-center gap-4 mt-1.5 text-[11px]">
+          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" />Your code: <strong>{analysis.firstPartyTbt}ms</strong> ({firstPartyPercent}%)</span>
+          <span className="flex items-center gap-1"><span className={`w-2.5 h-2.5 rounded-full ${cfg.barColor} inline-block`} />Third parties: <strong>{analysis.thirdPartyTbt}ms</strong> ({analysis.thirdPartyTbtPercent}%)</span>
+        </div>
+      </div>
+
+      {/* Size split */}
+      <div className="px-5 pb-4 grid grid-cols-3 gap-3">
+        <div className="bg-white/70 rounded-lg border border-slate-100 p-3 text-center">
+          <p className="text-[10px] font-semibold text-slate-400 uppercase mb-1">Your Assets</p>
+          <p className="text-lg font-bold text-blue-600">{analysis.firstPartySizeKB} KB</p>
+        </div>
+        <div className="bg-white/70 rounded-lg border border-slate-100 p-3 text-center">
+          <p className="text-[10px] font-semibold text-slate-400 uppercase mb-1">Third-Party Assets</p>
+          <p className={`text-lg font-bold ${analysis.thirdPartySizePercent > 50 ? "text-amber-600" : "text-slate-600"}`}>
+            {analysis.thirdPartySizeKB} KB <span className="text-xs font-normal text-slate-400">({analysis.thirdPartySizePercent}%)</span>
+          </p>
+        </div>
+        <div className="bg-white/70 rounded-lg border border-slate-100 p-3 text-center">
+          <p className="text-[10px] font-semibold text-slate-400 uppercase mb-1">LCP Image</p>
+          <p className={`text-sm font-bold ${analysis.lcpIsThirdParty ? "text-amber-600" : "text-emerald-600"}`}>
+            {analysis.lcpIsThirdParty ? "⚠️ External" : "Self-hosted"}
+          </p>
+          {analysis.lcpDomain && (
+            <p className="text-[9px] text-slate-400 truncate mt-0.5">{analysis.lcpDomain}</p>
+          )}
+        </div>
+      </div>
+
+      {/* Render blocking */}
+      {analysis.renderBlockingThirdParties.length > 0 && (
+        <div className="px-5 pb-4">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+            <p className="text-[11px] font-bold text-red-700 mb-1.5">🚫 Render-Blocking Third-Party Scripts</p>
+            <div className="flex flex-wrap gap-1.5">
+              {analysis.renderBlockingThirdParties.map(name => (
+                <span key={name} className="text-[10px] bg-red-100 text-red-700 border border-red-200 px-2 py-0.5 rounded-full font-medium">
+                  {name}
+                </span>
+              ))}
+            </div>
+            <p className="text-[10px] text-red-600 mt-1.5">These scripts are loaded synchronously and delay page rendering. Move them to async/defer.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Expanded: entity table */}
+      {expanded && analysis.entities.length > 0 && (
+        <div className="px-5 pb-5 border-t border-slate-100 pt-4">
+          <h4 className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-3">Third-Party Services Detected</h4>
+          <div className="space-y-2">
+            {analysis.entities.map((entity, i) => (
+              <div key={i} className="flex items-center gap-3 bg-white rounded-lg border border-slate-100 px-3 py-2.5 shadow-sm">
+                <span className="text-lg">{ENTITY_TYPE_ICONS[entity.type] ?? "🔌"}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-semibold text-slate-800">{entity.name}</span>
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${ENTITY_TYPE_COLORS[entity.type]}`}>
+                      {entity.type}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 truncate mt-0.5">{entity.domain}</p>
+                </div>
+                <div className="flex gap-3 shrink-0 text-right">
+                  {entity.blockingTimeMs > 0 && (
+                    <div>
+                      <p className={`text-xs font-bold tabular-nums ${entity.blockingTimeMs > 200 ? "text-red-600" : entity.blockingTimeMs > 50 ? "text-amber-600" : "text-slate-500"}`}>
+                        {entity.blockingTimeMs}ms
+                      </p>
+                      <p className="text-[9px] text-slate-400">blocking</p>
+                    </div>
+                  )}
+                  {entity.transferSizeKB > 0 && (
+                    <div>
+                      <p className="text-xs font-bold tabular-nums text-slate-600">{entity.transferSizeKB}KB</p>
+                      <p className="text-[9px] text-slate-400">size</p>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-xs font-bold tabular-nums text-slate-600">{entity.requestCount}</p>
+                    <p className="text-[9px] text-slate-400">req</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Fix recommendation */}
+          {result.fix_recommendation && (
+            <div className="mt-4 bg-blue-50 border-l-4 border-blue-400 rounded-r-lg p-3">
+              <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wider mb-1">Recommended Fix</p>
+              <p className="text-xs text-blue-800">{result.fix_recommendation}</p>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

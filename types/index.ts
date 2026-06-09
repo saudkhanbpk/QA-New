@@ -64,6 +64,29 @@ export interface PageRequestSize {
   other_percent: number;
 }
 
+export interface ThirdPartyEntity {
+  name: string;
+  domain: string;
+  blockingTimeMs: number;
+  transferSizeKB: number;
+  requestCount: number;
+  type: "analytics" | "cdn" | "database" | "media" | "ads" | "social" | "other";
+}
+
+export interface ThirdPartyAnalysis {
+  verdict: "site_issue" | "third_party_issue" | "mixed" | "clean";
+  firstPartyTbt: number;
+  thirdPartyTbt: number;
+  thirdPartyTbtPercent: number;
+  firstPartySizeKB: number;
+  thirdPartySizeKB: number;
+  thirdPartySizePercent: number;
+  lcpIsThirdParty: boolean;
+  lcpDomain: string | null;
+  entities: ThirdPartyEntity[];
+  renderBlockingThirdParties: string[];
+}
+
 export interface CwvEntry {
   url: string;
   strategy: "mobile" | "desktop";
@@ -89,6 +112,7 @@ export interface TestResult {
   page_request_size: PageRequestSize[] | null;
   inner_pages_results: { url: string }[] | null;
   cwv_results: CwvEntry[] | null;
+  third_party_analysis: ThirdPartyAnalysis | null;
 }
 
 export interface Screenshot {
