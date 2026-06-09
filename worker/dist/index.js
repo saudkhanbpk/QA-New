@@ -382,11 +382,16 @@ async function runTests(testRunId, url, viewports, checks, admin, timeouts) {
         });
         // ── INNER PAGES DISCOVERY ──────────────────────────────────────────────────
         // Strategy: 1) sitemap.xml  2) robots.txt Sitemap declarations  3) DOM <a> fallback
-        const parser = new fast_xml_parser_1.XMLParser();
+        // Configure parser to never coerce values to numbers/booleans — keeps <loc> as strings
+        const parser = new fast_xml_parser_1.XMLParser({
+            parseAttributeValue: false,
+            parseTagValue: false, // ← critical: prevents <loc>https://...</loc> becoming NaN
+            trimValues: true,
+        });
         const baseUrl = new URL(url).origin;
         const hostname = new URL(url).hostname;
         const innerPages = new Set();
-        logger_1.logger.info(`[InnerPages] Starting discovery for ${url} (baseUrl=${baseUrl}, hostname=${hostname})`);
+        logger_1.logger.info(`[InnerPages] Starting discovery for ${url} (baseUrl=${baseUrl}, hostname=${hostname}, normalized hostname=${hostname.replace(/^www\./, "")})`);
         const normalizeUrl = (link) => {
             try {
                 const u = new URL(link, baseUrl);
@@ -405,7 +410,10 @@ async function runTests(testRunId, url, viewports, checks, admin, timeouts) {
         const isInternalPage = (link) => {
             try {
                 const u = new URL(link);
-                if (u.hostname !== hostname) {
+                // Normalize both sides by stripping www. — handles www vs non-www mismatch
+                const linkHost = u.hostname.replace(/^www\./, "");
+                const siteHost = hostname.replace(/^www\./, "");
+                if (linkHost !== siteHost) {
                     return false;
                 }
                 return !/\.(jpg|jpeg|png|gif|svg|webp|avif|ico|pdf|zip|rar|css|js|xml|json|woff|woff2|ttf|eot|mp4|mp3)(\?|$)/i.test(u.pathname);
@@ -447,12 +455,24 @@ async function runTests(testRunId, url, viewports, checks, admin, timeouts) {
                     if (xml.urlset?.url) {
                         const urls = Array.isArray(xml.urlset.url) ? xml.urlset.url : [xml.urlset.url];
                         logger_1.logger.info(`[InnerPages] Sitemap ${sitemapUrl} has ${urls.length} <url> entries`);
+                        // Log first item to debug loc type/value issues
+                        if (urls.length > 0) {
+                            logger_1.logger.debug(`[InnerPages] First url item sample: ${JSON.stringify(urls[0])}`);
+                        }
                         urls.forEach((item) => {
-                            if (item?.loc && isInternalPage(item.loc)) {
-                                const normalized = normalizeUrl(item.loc);
+                            // fast-xml-parser can parse <loc> as a number — always coerce to string
+                            const loc = item?.loc != null ? String(item.loc) : null;
+                            if (loc && isInternalPage(loc)) {
+                                const normalized = normalizeUrl(loc);
                                 if (normalized) {
                                     innerPages.add(normalized);
                                 }
+                                else {
+                                    logger_1.logger.debug(`[InnerPages] normalizeUrl returned null for: ${loc}`);
+                                }
+                            }
+                            else if (loc) {
+                                logger_1.logger.debug(`[InnerPages] Filtered out (not internal): ${loc}`);
                             }
                         });
                         logger_1.logger.info(`[InnerPages] After parsing sitemap, innerPages.size = ${innerPages.size}`);
@@ -472,8 +492,10 @@ async function runTests(testRunId, url, viewports, checks, admin, timeouts) {
                                 const childUrlsArr = Array.isArray(childUrls) ? childUrls : [childUrls];
                                 logger_1.logger.info(`[InnerPages] Child sitemap ${child.loc} has ${childUrlsArr.length} entries`);
                                 childUrlsArr.forEach((item) => {
-                                    if (item?.loc && isInternalPage(item.loc)) {
-                                        const normalized = normalizeUrl(item.loc);
+                                    // Always coerce loc to string
+                                    const loc = item?.loc != null ? String(item.loc) : null;
+                                    if (loc && isInternalPage(loc)) {
+                                        const normalized = normalizeUrl(loc);
                                         if (normalized) {
                                             innerPages.add(normalized);
                                         }
@@ -529,6 +551,97 @@ async function runTests(testRunId, url, viewports, checks, admin, timeouts) {
                 screenshot_url: null,
                 inner_pages_results: innerPagesArray,
             });
+            // ── CORE WEB VITALS via Google PageSpeed Insights API ─────────────────────
+            // Fires all (page × strategy) calls in parallel — no sequential waiting.
+            const psiApiKey = process.env.PSI_API_KEY || 'AIzaSyC3v1nNu85_b8WbY1Z2Y66EvVq_sC2CPxw'; // optional — higher quota when set
+            const pagesToScan = innerPagesArray.map((p) => p.url);
+            if (pagesToScan.length > 0) {
+                logger_1.logger.info(`[CWV] Starting PSI scan for ${pagesToScan.length} pages × 2 strategies = ${pagesToScan.length * 2} parallel calls`);
+                const strategies = ["mobile", "desktop"];
+                /** Extract a metric value from PSI field data (loadingExperience) or lab data */
+                const extractMetric = (psiData, fieldKey, labKey) => {
+                    // Field data (real-user CrUX)
+                    const fieldMetric = psiData?.loadingExperience?.metrics?.[fieldKey];
+                    if (fieldMetric?.percentile != null) {
+                        return { value: fieldMetric.percentile, source: "field" };
+                    }
+                    // Lab data fallback (Lighthouse simulated)
+                    const labAudit = psiData?.lighthouseResult?.audits?.[labKey];
+                    if (labAudit?.numericValue != null) {
+                        return { value: Math.round(labAudit.numericValue), source: "lab" };
+                    }
+                    return { value: null, source: "none" };
+                };
+                // Build individual call function
+                const makePsiCall = async (pageUrl, strategy) => {
+                    const apiUrl = new URL("https://www.googleapis.com/pagespeedonline/v5/runPagespeed");
+                    apiUrl.searchParams.set("url", pageUrl);
+                    apiUrl.searchParams.set("strategy", strategy);
+                    apiUrl.searchParams.set("category", "performance");
+                    if (psiApiKey)
+                        apiUrl.searchParams.set("key", psiApiKey);
+                    try {
+                        logger_1.logger.debug(`[CWV] → PSI ${strategy} ${pageUrl}`);
+                        const res = await axios_1.default.get(apiUrl.toString(), { timeout: 30000 });
+                        const data = res.data;
+                        const lcp = extractMetric(data, "LARGEST_CONTENTFUL_PAINT_MS", "largest-contentful-paint");
+                        const inp = extractMetric(data, "INTERACTION_TO_NEXT_PAINT", "total-blocking-time");
+                        const cls = extractMetric(data, "CUMULATIVE_LAYOUT_SHIFT_SCORE", "cumulative-layout-shift");
+                        const sources = [lcp.source, inp.source, cls.source];
+                        const dominantSource = sources.includes("field") ? "field" :
+                            sources.includes("lab") ? "lab" : "none";
+                        logger_1.logger.info(`[CWV] ✓ ${strategy} ${pageUrl} | LCP=${lcp.value}ms INP=${inp.value}ms CLS=${cls.value} (${dominantSource})`);
+                        return { url: pageUrl, strategy, lcp: lcp.value, inp: inp.value, cls: cls.value, source: dominantSource };
+                    }
+                    catch (e) {
+                        logger_1.logger.warn(`[CWV] ✗ PSI failed for ${strategy} ${pageUrl}: ${e?.message ?? e}`);
+                        return { url: pageUrl, strategy, lcp: null, inp: null, cls: null, source: "none" };
+                    }
+                };
+                // With API key: fire all in parallel (400 req/100s quota — no problem)
+                // Without API key: batch to 20 concurrent (25 req/100s limit — safe margin)
+                const allPairs = pagesToScan.flatMap(pageUrl => strategies.map(strategy => ({ pageUrl, strategy })));
+                const cwvEntries = [];
+                if (psiApiKey) {
+                    // Full parallel — API key gives 400 req/100s
+                    logger_1.logger.info(`[CWV] API key present — firing all ${allPairs.length} calls in parallel`);
+                    const settled = await Promise.allSettled(allPairs.map(({ pageUrl, strategy }) => makePsiCall(pageUrl, strategy)));
+                    settled.forEach(r => { if (r.status === "fulfilled")
+                        cwvEntries.push(r.value); });
+                }
+                else {
+                    // No key — batch at 20 concurrent with 5s gap between batches to stay under 25/100s
+                    const BATCH_SIZE = 20;
+                    logger_1.logger.warn(`[CWV] No PSI_API_KEY set — batching at ${BATCH_SIZE} concurrent calls to avoid rate limiting`);
+                    for (let i = 0; i < allPairs.length; i += BATCH_SIZE) {
+                        if (i > 0) {
+                            logger_1.logger.info(`[CWV] Waiting 5s between batches to respect unauthenticated quota...`);
+                            await new Promise(r => setTimeout(r, 5000));
+                        }
+                        const batch = allPairs.slice(i, i + BATCH_SIZE);
+                        const settled = await Promise.allSettled(batch.map(({ pageUrl, strategy }) => makePsiCall(pageUrl, strategy)));
+                        settled.forEach(r => { if (r.status === "fulfilled")
+                            cwvEntries.push(r.value); });
+                    }
+                }
+                const successCount = cwvEntries.filter((e) => e.lcp !== null || e.inp !== null || e.cls !== null).length;
+                logger_1.logger.info(`[CWV] Scan complete — ${successCount}/${cwvEntries.length} entries have data`);
+                results.push({
+                    test_run_id: testRunId,
+                    category: "performance",
+                    check_name: "Core Web Vitals (Per Page)",
+                    status: successCount > 0 ? "pass" : "warning",
+                    severity: "low",
+                    message: `CWV scanned ${pagesToScan.length} pages (${strategies.length} strategies). ${successCount} entries returned data.`,
+                    fix_recommendation: "Review LCP (<2.5s good), INP (<200ms good), CLS (<0.1 good) for each page.",
+                    screenshot_url: null,
+                    cwv_results: cwvEntries,
+                });
+            }
+            else {
+                logger_1.logger.warn("[CWV] No inner pages to scan — skipping CWV check");
+            }
+            // ── END CORE WEB VITALS ────────────────────────────────────────────────────
         }
         catch (error) {
             logger_1.logger.error("[InnerPages] Discovery failed with unexpected error", error);
@@ -818,6 +931,301 @@ async function runTests(testRunId, url, viewports, checks, admin, timeouts) {
                         message: `TTI: ${tti.toFixed(1)}s (${vName}, target ≤ 3.8s)`,
                         fix_recommendation: tti > 3.8 ? (0, fix_recommendations_1.getFixRecommendation)("performance_score_low") : "", screenshot_url: null
                     });
+                    // ── THIRD-PARTY IMPACT ANALYSIS ──────────────────────────────────────
+                    // Uses data already collected by Lighthouse — no extra requests needed.
+                    try {
+                        const siteDomain = new URL(url).hostname.replace(/^www\./, "");
+                        // Known third-party entity classification map
+                        const KNOWN_ENTITIES = {
+                            "google-analytics.com": { name: "Google Analytics", type: "analytics" },
+                            "googletagmanager.com": { name: "Google Tag Manager", type: "analytics" },
+                            "googletagservices.com": { name: "Google Tag Services", type: "analytics" },
+                            "googlesyndication.com": { name: "Google Ads", type: "ads" },
+                            "doubleclick.net": { name: "Google DoubleClick", type: "ads" },
+                            "facebook.net": { name: "Facebook SDK", type: "social" },
+                            "facebook.com": { name: "Facebook", type: "social" },
+                            "connect.facebook.net": { name: "Facebook Connect", type: "social" },
+                            "twitter.com": { name: "Twitter/X", type: "social" },
+                            "cdn.jsdelivr.net": { name: "jsDelivr CDN", type: "cdn" },
+                            "cdnjs.cloudflare.com": { name: "Cloudflare CDN", type: "cdn" },
+                            "unpkg.com": { name: "unpkg CDN", type: "cdn" },
+                            "cloudinary.com": { name: "Cloudinary", type: "media" },
+                            "res.cloudinary.com": { name: "Cloudinary", type: "media" },
+                            "imagekit.io": { name: "ImageKit", type: "media" },
+                            "fastly.net": { name: "Fastly CDN", type: "cdn" },
+                            "akamaized.net": { name: "Akamai CDN", type: "cdn" },
+                            "cloudfront.net": { name: "AWS CloudFront", type: "cdn" },
+                            "amazonaws.com": { name: "AWS S3/Services", type: "cdn" },
+                            "mongodb.com": { name: "MongoDB Atlas", type: "database" },
+                            "stripe.com": { name: "Stripe", type: "other" },
+                            "stripe.js": { name: "Stripe.js", type: "other" },
+                            "intercom.io": { name: "Intercom", type: "analytics" },
+                            "hotjar.com": { name: "Hotjar", type: "analytics" },
+                            "mixpanel.com": { name: "Mixpanel", type: "analytics" },
+                            "segment.com": { name: "Segment", type: "analytics" },
+                            "typekit.net": { name: "Adobe Fonts", type: "cdn" },
+                            "fonts.googleapis.com": { name: "Google Fonts CSS", type: "cdn" },
+                            "fonts.gstatic.com": { name: "Google Fonts Assets", type: "cdn" },
+                            "youtube.com": { name: "YouTube Embed", type: "media" },
+                            "ytimg.com": { name: "YouTube Images", type: "media" },
+                            "vimeo.com": { name: "Vimeo Embed", type: "media" },
+                            "recaptcha.net": { name: "Google reCAPTCHA", type: "other" },
+                            "gstatic.com": { name: "Google Static", type: "cdn" },
+                            "ajax.googleapis.com": { name: "Google APIs", type: "cdn" },
+                            "sentry.io": { name: "Sentry Error Tracking", type: "analytics" },
+                            "bugsnag.com": { name: "Bugsnag", type: "analytics" },
+                            "crisp.chat": { name: "Crisp Chat", type: "other" },
+                            "tawk.to": { name: "Tawk.to Chat", type: "other" },
+                            "zendesk.com": { name: "Zendesk", type: "other" },
+                            "hubspot.com": { name: "HubSpot", type: "analytics" },
+                            "hs-scripts.com": { name: "HubSpot Scripts", type: "analytics" },
+                            "snapchat.com": { name: "Snapchat Pixel", type: "ads" },
+                            "tiktok.com": { name: "TikTok Pixel", type: "ads" },
+                            "linkedin.com": { name: "LinkedIn Insight", type: "analytics" },
+                            "pinimg.com": { name: "Pinterest", type: "social" },
+                        };
+                        const classifyDomain = (domain) => {
+                            // Exact match first
+                            if (KNOWN_ENTITIES[domain])
+                                return KNOWN_ENTITIES[domain];
+                            // Suffix match (e.g. "sub.cloudinary.com" → "cloudinary.com")
+                            for (const key of Object.keys(KNOWN_ENTITIES)) {
+                                if (domain.endsWith(key) || domain.endsWith(`.${key}`))
+                                    return KNOWN_ENTITIES[key];
+                            }
+                            return { name: domain, type: "other" };
+                        };
+                        const isThirdParty = (domain) => {
+                            const clean = domain.replace(/^www\./, "");
+                            return clean !== siteDomain && !clean.endsWith(`.${siteDomain}`);
+                        };
+                        // ── 1. Parse third-party-summary audit ───────────────────────────
+                        const tpSummaryAudit = audits["third-party-summary"];
+                        const entityMap = new Map();
+                        if (tpSummaryAudit?.details?.items) {
+                            for (const item of tpSummaryAudit.details.items) {
+                                const entityName = item.entity?.text ?? item.entity ?? "Unknown";
+                                const blockingMs = Math.round(item.blockingTime ?? 0);
+                                const sizeBytes = item.transferSize ?? 0;
+                                const reqs = item.requestCount ?? 0;
+                                // Try to extract real hostname from entity URL first
+                                let domain = "";
+                                try {
+                                    const u = item.entity?.url ?? item.url ?? "";
+                                    if (u)
+                                        domain = new URL(u).hostname.replace(/^www\./, "");
+                                }
+                                catch { /* fall through */ }
+                                // If no URL, try to find domain from entity name via KNOWN_ENTITIES reverse lookup
+                                if (!domain) {
+                                    const nameLower = entityName.toLowerCase();
+                                    for (const [key, val] of Object.entries(KNOWN_ENTITIES)) {
+                                        if (val.name.toLowerCase() === nameLower) {
+                                            domain = key;
+                                            break;
+                                        }
+                                    }
+                                }
+                                // Last resort: convert name to dot-notation (least reliable)
+                                if (!domain) {
+                                    domain = entityName.toLowerCase().replace(/\s+/g, ".");
+                                }
+                                // Skip if this is the first-party entity
+                                if (!isThirdParty(domain) && domain)
+                                    continue;
+                                const classification = classifyDomain(domain) ?? { name: entityName, type: "other" };
+                                entityMap.set(entityName, {
+                                    name: classification.name !== domain ? classification.name : entityName,
+                                    domain: domain,
+                                    blockingTimeMs: blockingMs,
+                                    transferSizeKB: Math.round(sizeBytes / 1024),
+                                    requestCount: reqs,
+                                    type: classification.type,
+                                });
+                            }
+                        }
+                        // ── 2. Parse network-requests for first/third party size split ───
+                        const networkAudit = audits["network-requests"];
+                        let firstPartySizeKB = 0;
+                        let thirdPartySizeKB = 0;
+                        const thirdPartyDomainMap = new Map();
+                        if (networkAudit?.details?.items) {
+                            for (const req of networkAudit.details.items) {
+                                try {
+                                    const reqUrl = req.url;
+                                    if (!reqUrl?.startsWith("http"))
+                                        continue;
+                                    const reqDomain = new URL(reqUrl).hostname.replace(/^www\./, "");
+                                    const sizeKB = Math.round((req.transferSize ?? 0) / 1024);
+                                    if (isThirdParty(reqDomain)) {
+                                        thirdPartySizeKB += sizeKB;
+                                        const existing = thirdPartyDomainMap.get(reqDomain) ?? { sizeKB: 0, requests: 0, blockingMs: 0 };
+                                        thirdPartyDomainMap.set(reqDomain, { sizeKB: existing.sizeKB + sizeKB, requests: existing.requests + 1, blockingMs: existing.blockingMs });
+                                    }
+                                    else {
+                                        firstPartySizeKB += sizeKB;
+                                    }
+                                }
+                                catch { /* skip malformed URLs */ }
+                            }
+                        }
+                        // Enrich entityMap with size/request data from network-requests.
+                        // Match by classified name (e.g. both "google.tag.manager" and "googletagmanager.com"
+                        // resolve to name="Google Tag Manager") to avoid duplicates.
+                        for (const [domain, data] of thirdPartyDomainMap.entries()) {
+                            const classification = classifyDomain(domain);
+                            let found = false;
+                            for (const [mapKey, entity] of entityMap.entries()) {
+                                // Match by: same resolved name OR same domain OR domain suffix
+                                const sameResolvedName = classification.name === entity.name;
+                                const sameDomain = entity.domain === domain || domain.endsWith(`.${entity.domain}`) || entity.domain.endsWith(`.${domain}`);
+                                if (sameResolvedName || sameDomain) {
+                                    found = true;
+                                    // Merge: prefer non-zero values
+                                    if (entity.transferSizeKB === 0)
+                                        entity.transferSizeKB = data.sizeKB;
+                                    if (entity.requestCount === 0)
+                                        entity.requestCount = data.requests;
+                                    // Update domain to the real hostname if it was a fallback
+                                    if (!entity.domain.includes(".") || entity.domain === entity.name.toLowerCase().replace(/\s+/g, ".")) {
+                                        entity.domain = domain;
+                                    }
+                                    break;
+                                }
+                            }
+                            // Only add as a new entity if truly not already represented AND has meaningful size
+                            if (!found && data.sizeKB > 5) {
+                                entityMap.set(domain, {
+                                    name: classification.name,
+                                    domain,
+                                    blockingTimeMs: 0,
+                                    transferSizeKB: data.sizeKB,
+                                    requestCount: data.requests,
+                                    type: classification.type,
+                                });
+                            }
+                        }
+                        // ── 3. LCP element domain check ──────────────────────────────────
+                        let lcpIsThirdParty = false;
+                        let lcpDomain = null;
+                        const lcpElementAudit = audits["largest-contentful-paint-element"];
+                        if (lcpElementAudit?.details?.items?.[0]) {
+                            try {
+                                // LCP element audit sometimes has a "node" with an imageUrl or src
+                                const lcpItem = lcpElementAudit.details.items[0];
+                                const lcpUrl = lcpItem?.node?.nodeLabel ?? lcpItem?.url ?? "";
+                                if (lcpUrl.startsWith("http")) {
+                                    lcpDomain = new URL(lcpUrl).hostname.replace(/^www\./, "");
+                                    lcpIsThirdParty = isThirdParty(lcpDomain);
+                                }
+                            }
+                            catch { /* ignore */ }
+                        }
+                        // Also check via network-requests: find the request that took longest
+                        // and matches approximate LCP timing
+                        if (!lcpDomain && networkAudit?.details?.items) {
+                            const imageRequests = networkAudit.details.items
+                                .filter(r => r.resourceType === "Image" && r.url?.startsWith("http"))
+                                .sort((a, b) => (b.endTime ?? 0) - (a.endTime ?? 0));
+                            if (imageRequests[0]) {
+                                try {
+                                    const topDomain = new URL(imageRequests[0].url).hostname.replace(/^www\./, "");
+                                    lcpDomain = topDomain;
+                                    lcpIsThirdParty = isThirdParty(topDomain);
+                                }
+                                catch { /* ignore */ }
+                            }
+                        }
+                        // ── 4. Render-blocking third parties ────────────────────────────
+                        const renderBlockingAudit = audits["render-blocking-resources"];
+                        const renderBlockingThirdParties = [];
+                        if (renderBlockingAudit?.details?.items) {
+                            for (const item of renderBlockingAudit.details.items) {
+                                try {
+                                    const domain = new URL(item.url).hostname.replace(/^www\./, "");
+                                    if (isThirdParty(domain)) {
+                                        const classification = classifyDomain(domain);
+                                        const label = classification.name !== domain ? classification.name : domain;
+                                        if (!renderBlockingThirdParties.includes(label)) {
+                                            renderBlockingThirdParties.push(label);
+                                        }
+                                    }
+                                }
+                                catch { /* ignore */ }
+                            }
+                        }
+                        // ── 5. Compute TBT split ─────────────────────────────────────────
+                        const thirdPartyTbt = Array.from(entityMap.values()).reduce((s, e) => s + e.blockingTimeMs, 0);
+                        const firstPartyTbt = Math.max(0, tbt - thirdPartyTbt);
+                        const totalTbt = firstPartyTbt + thirdPartyTbt;
+                        const thirdPartyTbtPercent = totalTbt > 0 ? Math.round((thirdPartyTbt / totalTbt) * 100) : 0;
+                        const totalSizeKB = firstPartySizeKB + thirdPartySizeKB;
+                        const thirdPartySizePercent = totalSizeKB > 0 ? Math.round((thirdPartySizeKB / totalSizeKB) * 100) : 0;
+                        // ── 6. Verdict logic ─────────────────────────────────────────────
+                        const perfScore = Math.round((lhr.categories.performance?.score ?? 0) * 100);
+                        const perfIsPoor = perfScore < 70;
+                        const thirdPartyIsSignificant = thirdPartyTbtPercent >= 50 || lcpIsThirdParty || renderBlockingThirdParties.length > 0;
+                        const firstPartyIssues = firstPartyTbt > (isMobile ? 300 : 200) || (tbt > 0 && thirdPartyTbtPercent < 30);
+                        let verdict;
+                        if (!perfIsPoor) {
+                            verdict = "clean";
+                        }
+                        else if (thirdPartyIsSignificant && !firstPartyIssues) {
+                            verdict = "third_party_issue";
+                        }
+                        else if (thirdPartyIsSignificant && firstPartyIssues) {
+                            verdict = "mixed";
+                        }
+                        else {
+                            verdict = "site_issue";
+                        }
+                        // ── 7. Build human-readable message ──────────────────────────────
+                        const topEntities = Array.from(entityMap.values())
+                            .filter(e => e.blockingTimeMs > 0 || e.transferSizeKB > 10)
+                            .sort((a, b) => b.blockingTimeMs - a.blockingTimeMs)
+                            .slice(0, 5);
+                        const verdictMessages = {
+                            clean: `Your site and third-party services are performing well (score: ${perfScore}/100).`,
+                            site_issue: `Your site's own code is causing performance issues (score: ${perfScore}/100). Third-party services account for only ${thirdPartyTbtPercent}% of blocking time.`,
+                            third_party_issue: `Your website code is healthy, but third-party services are dragging performance down (score: ${perfScore}/100). ${thirdPartyTbtPercent}% of blocking time is from external services.${lcpIsThirdParty ? ` LCP image is served from third-party: ${lcpDomain}.` : ""}`,
+                            mixed: `Both your site code and third-party services are contributing to poor performance (score: ${perfScore}/100). Third-parties: ${thirdPartyTbtPercent}% of blocking time.`,
+                        };
+                        const analysis = {
+                            verdict,
+                            firstPartyTbt,
+                            thirdPartyTbt,
+                            thirdPartyTbtPercent,
+                            firstPartySizeKB,
+                            thirdPartySizeKB,
+                            thirdPartySizePercent,
+                            lcpIsThirdParty,
+                            lcpDomain,
+                            entities: topEntities,
+                            renderBlockingThirdParties,
+                        };
+                        logger_1.logger.info(`[ThirdParty] ${vName}: verdict=${verdict}, 3P TBT=${thirdPartyTbt}ms (${thirdPartyTbtPercent}%), LCP 3P=${lcpIsThirdParty}`);
+                        const fixMessages = {
+                            clean: "",
+                            site_issue: "Optimize your own JavaScript bundles. Use code splitting, tree shaking, and defer non-critical scripts. Compress and resize your own images.",
+                            third_party_issue: `Remove or defer these third-party scripts: ${topEntities.map(e => e.name).join(", ")}. Load analytics asynchronously. Self-host critical fonts and images instead of relying on external CDNs.`,
+                            mixed: `Fix both: (1) Audit your own JS bundles for unused code. (2) Defer or remove slow third-party scripts: ${topEntities.map(e => e.name).join(", ")}.`,
+                        };
+                        results.push({
+                            test_run_id: testRunId,
+                            category: "performance",
+                            check_name: `Third-Party Impact Analysis (${vName})`,
+                            status: verdict === "clean" ? "pass" : verdict === "third_party_issue" ? "warning" : verdict === "mixed" ? "warning" : "fail",
+                            severity: verdict === "clean" ? "low" : verdict === "site_issue" ? "critical" : "medium",
+                            message: verdictMessages[verdict],
+                            fix_recommendation: fixMessages[verdict],
+                            screenshot_url: null,
+                            third_party_analysis: analysis,
+                        });
+                    }
+                    catch (tpErr) {
+                        logger_1.logger.warn(`[ThirdParty] Analysis failed for ${vName}:`, tpErr);
+                    }
+                    // ── END THIRD-PARTY ANALYSIS ──────────────────────────────────────
                 }
             }
             catch (lhErr) {
