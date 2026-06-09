@@ -27,14 +27,14 @@ async function checkAdminAuth() {
 // DELETE - Delete user account
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const authCheck = await checkAdminAuth();
   if (!authCheck.authorized) {
     return NextResponse.json({ error: authCheck.error }, { status: 401 });
   }
 
-  const userId = params.id;
+  const { id: userId } = await params;
   const admin = createAdminClient();
 
   try {
@@ -60,14 +60,14 @@ export async function DELETE(
 // PATCH - Ban/Unban user
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const authCheck = await checkAdminAuth();
   if (!authCheck.authorized) {
     return NextResponse.json({ error: authCheck.error }, { status: 401 });
   }
 
-  const userId = params.id;
+  const { id: userId } = await params;
   const body = await request.json();
   const { banned } = body;
 
