@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { CheckCircle2, XCircle, AlertTriangle, Download, Globe, Clock, Monitor, Smartphone, Tablet, Wrench, RefreshCw, ListTodo, FileSearch, HelpCircle, Shield, ChevronDown, Layers, Info, Square } from "lucide-react";
+import { CheckCircle2, XCircle, AlertTriangle, Download, ShieldAlert, Search, Zap, Globe, Clock, Monitor, Smartphone, Tablet, Wrench, RefreshCw, ListTodo, FileSearch, HelpCircle, Shield, ChevronDown, Layers, Info, Square, Phone, Mail, ExternalLink, ArrowRight, Link2, Bug } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import type { TestReport, TestResult, Severity, ResultStatus, Category, PageSize, CwvEntry, ThirdPartyAnalysis, ThirdPartyEntity } from "@/types";
@@ -673,8 +673,9 @@ export function ReportView({ report }: ReportViewProps) {
         );
       })()}
 
-      <Tabs defaultValue="summary">
+      <Tabs defaultValue="issues">
         <TabsList className="flex flex-wrap h-auto gap-0.5 p-0.5 bg-slate-100 rounded-lg">
+          <TabsTrigger value="issues" className="text-xs px-4 py-2 rounded-md transition-all font-semibold bg-emerald-500 text-white data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-md hover:bg-emerald-600">🛡️ Fix Recommendations</TabsTrigger>
           <TabsTrigger value="summary" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">Summary</TabsTrigger>
           <TabsTrigger value="performance" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">Performance</TabsTrigger>
           <TabsTrigger value="inner_pages" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">Inner Pages</TabsTrigger>
@@ -691,6 +692,10 @@ export function ReportView({ report }: ReportViewProps) {
 
         <div className="relative mt-4">
           <div className={!isLoggedIn && isLoggedIn !== null ? "blur-md pointer-events-none select-none" : ""}>
+            <TabsContent value="issues" className="space-y-6">
+              <IssuesOverviewTabContent results={results} />
+            </TabsContent>
+
             <TabsContent value="summary" className="space-y-6">
               <SummaryTabContent report={report} />
             </TabsContent>
@@ -1240,7 +1245,7 @@ function PerformanceTabContent({ results }: { results: TestResult[] }) {
 
   return (
     <div className="space-y-16 py-4">
-     
+
 
       {/* ── Third-Party Impact Analysis ── */}
       {thirdPartyResults.length > 0 && (
@@ -1258,7 +1263,7 @@ function PerformanceTabContent({ results }: { results: TestResult[] }) {
           </div>
         </div>
       )}
-       <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between">
         <div className="space-y-1">
           <h2 className="text-xl font-medium text-slate-700">Performance Metrics</h2>
           <p className="text-xs text-slate-400">The following metrics are generated using Lighthouse Performance data.</p>
@@ -1273,7 +1278,7 @@ function PerformanceTabContent({ results }: { results: TestResult[] }) {
       {vpOrder.map(vp => {
         const vpResults = metricResults.filter(r =>
           r.check_name.toLowerCase().includes(`(${vp})`) ||
-          (vp === "desktop" && !["mobile", "tablet"].some(v => r.check_name.toLowerCase().includes(`(${v})`)) && !viewports.some(v => r.check_name.toLowerCase().includes(`(${v.toLowerCase()})`) ))
+          (vp === "desktop" && !["mobile", "tablet"].some(v => r.check_name.toLowerCase().includes(`(${v})`)) && !viewports.some(v => r.check_name.toLowerCase().includes(`(${v.toLowerCase()})`)))
         );
         if (vpResults.length === 0) return null;
 
@@ -1536,16 +1541,16 @@ function OthersTabContent({ results }: { results: TestResult[] }) {
 function cwvColor(metric: "lcp" | "inp" | "cls", value: number | null): string {
   if (value === null) return "text-slate-400";
   if (metric === "lcp") return value <= 2500 ? "text-emerald-600" : value <= 4000 ? "text-amber-500" : "text-red-500";
-  if (metric === "inp") return value <= 200  ? "text-emerald-600" : value <= 500  ? "text-amber-500" : "text-red-500";
-  if (metric === "cls") return value <= 0.1  ? "text-emerald-600" : value <= 0.25 ? "text-amber-500" : "text-red-500";
+  if (metric === "inp") return value <= 200 ? "text-emerald-600" : value <= 500 ? "text-amber-500" : "text-red-500";
+  if (metric === "cls") return value <= 0.1 ? "text-emerald-600" : value <= 0.25 ? "text-amber-500" : "text-red-500";
   return "text-slate-400";
 }
 
 function cwvBg(metric: "lcp" | "inp" | "cls", value: number | null): string {
   if (value === null) return "bg-slate-50 border-slate-200";
   if (metric === "lcp") return value <= 2500 ? "bg-emerald-50 border-emerald-200" : value <= 4000 ? "bg-amber-50 border-amber-200" : "bg-red-50 border-red-200";
-  if (metric === "inp") return value <= 200  ? "bg-emerald-50 border-emerald-200" : value <= 500  ? "bg-amber-50 border-amber-200" : "bg-red-50 border-red-200";
-  if (metric === "cls") return value <= 0.1  ? "bg-emerald-50 border-emerald-200" : value <= 0.25 ? "bg-amber-50 border-amber-200" : "bg-red-50 border-red-200";
+  if (metric === "inp") return value <= 200 ? "bg-emerald-50 border-emerald-200" : value <= 500 ? "bg-amber-50 border-amber-200" : "bg-red-50 border-red-200";
+  if (metric === "cls") return value <= 0.1 ? "bg-emerald-50 border-emerald-200" : value <= 0.25 ? "bg-amber-50 border-amber-200" : "bg-red-50 border-red-200";
   return "bg-slate-50 border-slate-200";
 }
 
@@ -1603,9 +1608,9 @@ function InnerPagesTabContent({ results }: { results: TestResult[] }) {
   );
 
   // Summary stats
-  const goodLcp  = filtered.filter(e => e.lcp !== null && e.lcp <= 2500).length;
-  const goodInp  = filtered.filter(e => e.inp !== null && e.inp <= 200).length;
-  const goodCls  = filtered.filter(e => e.cls !== null && e.cls <= 0.1).length;
+  const goodLcp = filtered.filter(e => e.lcp !== null && e.lcp <= 2500).length;
+  const goodInp = filtered.filter(e => e.inp !== null && e.inp <= 200).length;
+  const goodCls = filtered.filter(e => e.cls !== null && e.cls <= 0.1).length;
   const total = filtered.length;
 
   const noData = allEntries.length === 0;
@@ -1656,8 +1661,8 @@ function InnerPagesTabContent({ results }: { results: TestResult[] }) {
           <div className="grid grid-cols-3 gap-3">
             {[
               { label: "Good LCP", good: goodLcp, total, hint: "≤ 2500 ms", color: "emerald" },
-              { label: "Good INP", good: goodInp, total, hint: "≤ 200 ms",  color: "blue" },
-              { label: "Good CLS", good: goodCls, total, hint: "≤ 0.1",     color: "purple" },
+              { label: "Good INP", good: goodInp, total, hint: "≤ 200 ms", color: "blue" },
+              { label: "Good CLS", good: goodCls, total, hint: "≤ 0.1", color: "purple" },
             ].map(({ label, good, total, hint, color }) => (
               <div key={label} className="bg-white border border-slate-100 rounded-xl shadow-sm p-4 flex flex-col gap-1">
                 <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">{label}</span>
@@ -1765,22 +1770,22 @@ function InnerPagesTabContent({ results }: { results: TestResult[] }) {
 
 const ENTITY_TYPE_COLORS: Record<string, string> = {
   analytics: "bg-purple-100 text-purple-700 border-purple-200",
-  cdn:        "bg-blue-100 text-blue-700 border-blue-200",
-  database:   "bg-orange-100 text-orange-700 border-orange-200",
-  media:      "bg-pink-100 text-pink-700 border-pink-200",
-  ads:        "bg-red-100 text-red-700 border-red-200",
-  social:     "bg-sky-100 text-sky-700 border-sky-200",
-  other:      "bg-slate-100 text-slate-600 border-slate-200",
+  cdn: "bg-blue-100 text-blue-700 border-blue-200",
+  database: "bg-orange-100 text-orange-700 border-orange-200",
+  media: "bg-pink-100 text-pink-700 border-pink-200",
+  ads: "bg-red-100 text-red-700 border-red-200",
+  social: "bg-sky-100 text-sky-700 border-sky-200",
+  other: "bg-slate-100 text-slate-600 border-slate-200",
 };
 
 const ENTITY_TYPE_ICONS: Record<string, string> = {
   analytics: "📊",
-  cdn:        "🌐",
-  database:   "🗄️",
-  media:      "🖼️",
-  ads:        "📣",
-  social:     "👥",
-  other:      "🔌",
+  cdn: "🌐",
+  database: "🗄️",
+  media: "🖼️",
+  ads: "📣",
+  social: "👥",
+  other: "🔌",
 };
 
 const VERDICT_CONFIG = {
@@ -2014,11 +2019,10 @@ function StructureTabContent({ results }: { results: TestResult[] }) {
             <button
               key={f}
               onClick={() => setActiveFilter(f)}
-              className={`px-3 py-1 text-[10px] font-bold rounded-sm transition-all ${
-                activeFilter === f
-                  ? "bg-[#2d5d85] text-white"
-                  : "text-slate-500 hover:text-slate-700 hover:bg-slate-200"
-              }`}
+              className={`px-3 py-1 text-[10px] font-bold rounded-sm transition-all ${activeFilter === f
+                ? "bg-[#2d5d85] text-white"
+                : "text-slate-500 hover:text-slate-700 hover:bg-slate-200"
+                }`}
             >
               {f}
             </button>
@@ -2058,13 +2062,12 @@ function StructureTabContent({ results }: { results: TestResult[] }) {
                   <AccordionTrigger className="hover:no-underline py-0 px-0 group">
                     <div className="flex w-full items-stretch">
                       {/* Severity badge */}
-                      <div className={`w-28 flex items-center justify-center text-[11px] font-bold text-white shrink-0 transition-colors ${
-                        issue.severity === "critical"
-                          ? "bg-[#e74c3c] group-hover:bg-[#d63031]"
-                          : issue.severity === "medium"
-                            ? "bg-[#f39c12] group-hover:bg-[#d68910]"
-                            : "bg-[#a3c24d] group-hover:bg-[#8da33f]"
-                      }`}>
+                      <div className={`w-28 flex items-center justify-center text-[11px] font-bold text-white shrink-0 transition-colors ${issue.severity === "critical"
+                        ? "bg-[#e74c3c] group-hover:bg-[#d63031]"
+                        : issue.severity === "medium"
+                          ? "bg-[#f39c12] group-hover:bg-[#d68910]"
+                          : "bg-[#a3c24d] group-hover:bg-[#8da33f]"
+                        }`}>
                         {issue.severity === "critical" ? "High" : issue.severity === "medium" ? "Medium" : issue.status === "pass" ? "Pass" : "Low"}
                       </div>
 
@@ -2131,9 +2134,8 @@ function StructureTabContent({ results }: { results: TestResult[] }) {
                                         href={nodeUrl}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className={`text-[11px] hover:underline break-all font-mono truncate max-w-xs ${
-                                          isRoot ? "text-slate-700 font-semibold" : "text-[#2d5d85]"
-                                        }`}
+                                        className={`text-[11px] hover:underline break-all font-mono truncate max-w-xs ${isRoot ? "text-slate-700 font-semibold" : "text-[#2d5d85]"
+                                          }`}
                                         title={nodeUrl}
                                       >
                                         {nodeUrl.length > 60 ? nodeUrl.slice(0, 60) + "…" : nodeUrl}
@@ -2339,6 +2341,545 @@ function StructureCheckGroup({
               )}
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── ISSUES OVERVIEW TAB ─────────────────────────────────────────────────────
+
+interface IssueCategoryConfig {
+  key: string;
+  label: string;
+  icon: string;
+  gradient: string;
+  borderColor: string;
+  categories: string[];
+}
+
+const ISSUE_CATEGORIES: IssueCategoryConfig[] = [
+  {
+    key: "broken_links",
+    label: "Broken Links",
+    icon: "🔗",
+    gradient: "from-red-500/10 to-red-500/5",
+    borderColor: "border-red-200",
+    categories: ["broken_links"],
+  },
+  {
+    key: "structure",
+    label: "Structure Issues",
+    icon: "🏗️",
+    gradient: "from-orange-500/10 to-orange-500/5",
+    borderColor: "border-orange-200",
+    categories: ["structure"],
+  },
+  {
+    key: "compatibility",
+    label: "Cross-Browser",
+    icon: "🌐",
+    gradient: "from-purple-500/10 to-purple-500/5",
+    borderColor: "border-purple-200",
+    categories: ["compatibility"],
+  },
+  {
+    key: "security",
+    label: "Security",
+    icon: "🔒",
+    gradient: "from-blue-500/10 to-blue-500/5",
+    borderColor: "border-blue-200",
+    categories: ["security"],
+  },
+  {
+    key: "performance",
+    label: "Performance",
+    icon: "⚡",
+    gradient: "from-yellow-500/10 to-yellow-500/5",
+    borderColor: "border-yellow-200",
+    categories: ["performance"],
+  },
+  {
+    key: "seo_quality",
+    label: "SEO & Quality",
+    icon: "📝",
+    gradient: "from-emerald-500/10 to-emerald-500/5",
+    borderColor: "border-emerald-200",
+    categories: ["seo", "quality", "others"],
+  },
+];
+
+function IssuesOverviewTabContent({ results }: { results: TestResult[] }) {
+  const allIssues = results.filter((r) => r.status !== "pass");
+  const criticalCount = allIssues.filter((r) => r.severity === "critical").length;
+  const mediumCount = allIssues.filter((r) => r.severity === "medium").length;
+  const lowCount = allIssues.filter((r) => r.severity === "low").length;
+  const failCount = allIssues.filter((r) => r.status === "fail").length;
+  const warnCount = allIssues.filter((r) => r.status === "warning").length;
+  const totalChecks = results.length;
+  const passedChecks = results.filter((r) => r.status === "pass").length;
+  const isHealthy = allIssues.length === 0;
+
+  // Group issues by our custom categories
+  const issuesByCategory = ISSUE_CATEGORIES.map((cat) => {
+    const catIssues = allIssues.filter((r) => cat.categories.includes(r.category));
+    const catFails = catIssues.filter((r) => r.status === "fail").length;
+    const catWarns = catIssues.filter((r) => r.status === "warning").length;
+    return { ...cat, issues: catIssues, fails: catFails, warns: catWarns };
+  });
+
+  return (
+    <div className="space-y-6">
+
+      {/* ── CTA SECTION ──────────────────────────────────────────────── */}
+      <div className="relative overflow-hidden rounded-xl border-2 border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-emerald-50/50 p-6 md:p-8 shadow-sm">
+        {/* Decorative elements */}
+        <div className="absolute top-0 right-0 w-64 h-64 opacity-5">
+          <svg viewBox="0 0 200 200" className="w-full h-full">
+            <circle cx="100" cy="100" r="80" fill="none" stroke="#22c55e" strokeWidth="2" />
+            <circle cx="100" cy="100" r="60" fill="none" stroke="#22c55e" strokeWidth="1" />
+            <circle cx="100" cy="100" r="40" fill="none" stroke="#22c55e" strokeWidth="1" />
+          </svg>
+        </div>
+
+        <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-2 max-w-lg">
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center">
+                <Wrench className="h-5 w-5 text-emerald-600" />
+              </div>
+              <h3 className="text-lg md:text-xl font-bold text-slate-800">
+                Need Help Fixing These Issues?
+              </h3>
+            </div>
+            <p className="text-sm text-slate-500 leading-relaxed">
+              Our team of expert developers can resolve{" "}
+              {allIssues.length > 0 ? (
+                <>
+                  all <span className="font-semibold text-emerald-700">{allIssues.length} issues</span>
+                </>
+              ) : (
+                "any issues"
+              )}{" "}
+              in your report quickly and professionally.
+            </p>
+            <div className="flex items-center gap-4 text-[13px] text-slate-400">
+              <span className="flex items-center gap-1">
+                <Zap className="h-3 w-3" /> Average fix: {allIssues.length * 1.5} hrs
+              </span>
+
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2 shrink-0">
+            <Button
+              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2 shadow-md hover:shadow-lg transition-all px-6 py-5 text-sm font-semibold"
+              onClick={() => window.open("https://wa.me/+923119265290", "_self")}
+            >
+              <Phone className="h-4 w-4" />
+              Whatsapp Now
+            </Button>
+            <Button
+              variant="outline"
+              className="border-emerald-300 text-emerald-700 hover:bg-emerald-50 gap-2 px-6 py-5 text-sm"
+              onClick={() => window.open("https://techcreator.co/contact", "_blank")}
+            >
+              <Mail className="h-4 w-4" />
+              Get a Free Quote
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── HERO SECTION ─────────────────────────────────────────────── */}
+      <div
+        className={`relative overflow-hidden rounded-xl border-2 p-6 ${isHealthy
+          ? "border-emerald-300 bg-gradient-to-br from-emerald-50 to-green-50"
+          : criticalCount > 0
+            ? "border-red-300 bg-gradient-to-br from-red-50 to-orange-50"
+            : "border-amber-300 bg-gradient-to-br from-amber-50 to-yellow-50"
+          }`}
+      >
+        {/* Decorative circles */}
+        <div className="absolute -top-20 -right-20 w-60 h-60 rounded-full opacity-10"
+          style={{ background: isHealthy ? "#22c55e" : criticalCount > 0 ? "#ef4444" : "#f59e0b" }} />
+        <div className="absolute -bottom-10 -left-10 w-40 h-40 rounded-full opacity-5"
+          style={{ background: isHealthy ? "#22c55e" : criticalCount > 0 ? "#ef4444" : "#f59e0b" }} />
+
+        <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl shadow-sm ${isHealthy
+                ? "bg-emerald-100"
+                : criticalCount > 0
+                  ? "bg-red-100"
+                  : "bg-amber-100"
+                }`}>
+                {isHealthy ? "✅" : criticalCount > 0 ? "🚨" : "⚠️"}
+              </div>
+              <div>
+                <h2 className={`text-xl md:text-2xl font-bold ${isHealthy ? "text-emerald-800" : criticalCount > 0 ? "text-red-800" : "text-amber-800"
+                  }`}>
+                  {isHealthy
+                    ? "Your Site is Healthy!"
+                    : `${allIssues.length} Issue${allIssues.length !== 1 ? "s" : ""} Found`}
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  {passedChecks} of {totalChecks} checks passed
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Severity pills */}
+          {!isHealthy && (
+            <div className="flex items-center gap-2 flex-wrap">
+              {criticalCount > 0 && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-200 shadow-sm">
+                  <XCircle className="h-3.5 w-3.5" />
+                  {criticalCount} Critical
+                </span>
+              )}
+              {mediumCount > 0 && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700 border border-amber-200 shadow-sm">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  {mediumCount} Medium
+                </span>
+              )}
+              {lowCount > 0 && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-blue-100 text-blue-700 border border-blue-200 shadow-sm">
+                  <Info className="h-3.5 w-3.5" />
+                  {lowCount} Low
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Progress bar */}
+        {!isHealthy && (
+          <div className="relative mt-4">
+            <div className="flex justify-between text-[11px] text-muted-foreground mb-1">
+              <span>{passedChecks} passed</span>
+              <span>{failCount} failed, {warnCount} warnings</span>
+            </div>
+            <div className="h-2.5 bg-white/60 rounded-full overflow-hidden shadow-inner">
+              <div
+                className="h-full rounded-full transition-all duration-700 ease-out"
+                style={{
+                  width: `${Math.round((passedChecks / totalChecks) * 100)}%`,
+                  background: "linear-gradient(90deg, #22c55e, #4ade80)",
+                }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── CATEGORY CARDS GRID ──────────────────────────────────────── */}
+      {/* <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {issuesByCategory.map((cat) => (
+          <div
+            key={cat.key}
+            className={`relative overflow-hidden rounded-xl border bg-gradient-to-br ${cat.gradient} ${cat.borderColor} p-4 transition-all hover:shadow-md hover:-translate-y-0.5`}
+          >
+            <div className="flex items-start justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">{cat.icon}</span>
+                <h3 className="text-sm font-semibold text-slate-800">{cat.label}</h3>
+              </div>
+              {cat.issues.length === 0 ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">
+                  <CheckCircle2 className="h-3 w-3" /> OK
+                </span>
+              ) : (
+                <div className="flex items-center gap-1">
+                  {cat.fails > 0 && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">
+                      {cat.fails} ✗
+                    </span>
+                  )}
+                  {cat.warns > 0 && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">
+                      {cat.warns} ⚠
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {cat.issues.length > 0 ? (
+              <div className="space-y-1.5">
+                {cat.issues.slice(0, 3).map((issue, i) => (
+                  <div key={i} className="flex items-start gap-1.5">
+                    <span className="mt-0.5 text-[10px]">{issue.status === "fail" ? "❌" : "⚠️"}</span>
+                    <p className="text-[11px] text-slate-600 leading-tight line-clamp-1">
+                      {issue.check_name}
+                    </p>
+                  </div>
+                ))}
+                {cat.issues.length > 3 && (
+                  <p className="text-[10px] text-slate-400 ml-4">
+                    +{cat.issues.length - 3} more...
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="text-[11px] text-slate-400">All checks passed</p>
+            )}
+          </div>
+        ))}
+      </div> */}
+
+      {/* ── DETAILED PROBLEMS & SOLUTIONS ─────────────────────────── */}
+      {/* {allIssues.length > 0 && (
+        <div>
+          <h3 className="text-base font-semibold text-slate-800 mb-3 flex items-center gap-2">
+            <Wrench className="h-4 w-4 text-slate-500" />
+            Problems & Recommended Fixes
+          </h3>
+
+          <Accordion type="multiple" className="space-y-2">
+            {issuesByCategory
+              .filter((cat) => cat.issues.length > 0)
+              .map((cat) => (
+                <AccordionItem
+                  key={cat.key}
+                  value={cat.key}
+                  className="border rounded-lg overflow-hidden bg-white shadow-sm"
+                >
+                  <AccordionTrigger className="px-4 py-3 hover:no-underline hover:bg-slate-50/50">
+                    <div className="flex items-center gap-3 text-left">
+                      <span className="text-lg">{cat.icon}</span>
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800">
+                          {cat.label}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {cat.fails > 0 && (
+                            <span className="text-red-600 font-medium">{cat.fails} failed</span>
+                          )}
+                          {cat.fails > 0 && cat.warns > 0 && <span> · </span>}
+                          {cat.warns > 0 && (
+                            <span className="text-amber-600 font-medium">{cat.warns} warnings</span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent className="px-4 pb-4 pt-0">
+                    <div className="space-y-3">
+                      {cat.issues
+                        .sort((a, b) => {
+                          const sevOrder = { critical: 0, medium: 1, low: 2 };
+                          return (sevOrder[a.severity] ?? 3) - (sevOrder[b.severity] ?? 3);
+                        })
+                        .map((issue, idx) => (
+                          <div
+                            key={idx}
+                            className={`rounded-lg border-l-4 p-3 ${issue.status === "fail"
+                              ? "border-l-red-500 bg-red-50/50"
+                              : "border-l-amber-400 bg-amber-50/30"
+                              }`}
+                          >
+                            <div className="flex items-start justify-between gap-2 mb-1">
+                              <div className="flex items-start gap-2">
+                                {issue.status === "fail" ? (
+                                  <XCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
+                                ) : (
+                                  <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+                                )}
+                                <p className="text-sm font-medium text-slate-800">
+                                  {issue.check_name}
+                                </p>
+                              </div>
+                              <span
+                                className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${issue.severity === "critical"
+                                  ? "bg-red-100 text-red-700"
+                                  : issue.severity === "medium"
+                                    ? "bg-amber-100 text-amber-700"
+                                    : "bg-slate-100 text-slate-600"
+                                  }`}
+                              >
+                                {issue.severity.toUpperCase()}
+                              </span>
+                            </div>
+
+                            <div className="ml-6 space-y-2">
+                              <div>
+                                <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">
+                                  Problem
+                                </p>
+                                <p className="text-xs text-slate-600 leading-relaxed">
+                                  {issue.message}
+                                </p>
+                              </div>
+
+                              {issue.fix_recommendation && (
+                                <div className="bg-blue-50/70 border border-blue-100 rounded-md p-2.5">
+                                  <p className="text-[11px] font-semibold text-blue-700 uppercase tracking-wider mb-0.5 flex items-center gap-1">
+                                    <Wrench className="h-3 w-3" /> Solution
+                                  </p>
+                                  <p className="text-xs text-blue-800 leading-relaxed">
+                                    {issue.fix_recommendation}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+          </Accordion>
+        </div>
+      )} */}
+      {allIssues.length > 0 && (
+        <div className="space-y-4">
+
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="flex items-center justify-center w-7 h-7 rounded-md bg-slate-100">
+                <Wrench className="h-3.5 w-3.5 text-slate-500" />
+              </div>
+              <div>
+                <h3 className="text-[13px] font-semibold text-slate-800 leading-none">
+                  Problems &amp; recommended fixes
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  {allIssues.length} issues across {issuesByCategory.filter((c) => c.issues.length > 0).length} categories
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {allIssues.filter((i) => i.status === "fail").length > 0 && (
+                <span className="rounded-full bg-red-50 px-2.5 py-0.5 text-[11px] font-semibold text-red-600 ring-1 ring-red-100">
+                  {allIssues.filter((i) => i.status === "fail").length} failed
+                </span>
+              )}
+              {allIssues.filter((i) => i.status === "warning").length > 0 && (
+                <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-600 ring-1 ring-amber-100">
+                  {allIssues.filter((i) => i.status === "warning").length} warnings
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Accordion */}
+          <Accordion type="multiple" className="space-y-2">
+            {issuesByCategory
+              .filter((cat) => cat.issues.length > 0)
+              .map((cat) => {
+                const fails = cat.issues.filter((i) => i.status === "fail").length;
+                const warns = cat.issues.filter((i) => i.status === "warning").length;
+
+                return (
+                  <AccordionItem
+                    key={cat.key}
+                    value={cat.key}
+                    className="rounded-xl border border-slate-200 bg-white overflow-hidden"
+                  >
+                    <AccordionTrigger className="px-4 py-3.5 hover:no-underline hover:bg-slate-50/70 data-[state=open]:bg-slate-50/70 [&>svg]:hidden group">
+                      <div className="flex items-center justify-between w-full gap-3">
+                        <div className="flex items-center gap-3">
+                          <span className="text-xl leading-none">{cat.icon}</span>
+                          <div className="text-left">
+                            <p className="text-[13px] font-semibold text-slate-800 leading-snug">
+                              {cat.label}
+                            </p>
+                            <div className="flex items-center gap-1.5 mt-1">
+                              {fails > 0 && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-600 ring-1 ring-red-100">
+                                  <XCircle className="h-2.5 w-2.5" />
+                                  {fails} failed
+                                </span>
+                              )}
+                              {warns > 0 && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-600 ring-1 ring-amber-100">
+                                  <AlertTriangle className="h-2.5 w-2.5" />
+                                  {warns} {warns === 1 ? "warning" : "warnings"}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <ChevronDown className="h-4 w-4 text-slate-400 shrink-0 transition-transform duration-200 group-data-[state=open]:rotate-180" />
+                      </div>
+                    </AccordionTrigger>
+
+                    <AccordionContent className="px-4 pb-4 pt-0">
+                      <div className="h-px bg-slate-100 mb-3" />
+                      <div className="space-y-2.5">
+                        {cat.issues
+                          .sort((a, b) => {
+                            const sevOrder = { critical: 0, medium: 1, low: 2 };
+                            return (sevOrder[a.severity] ?? 3) - (sevOrder[b.severity] ?? 3);
+                          })
+                          .map((issue, idx) => (
+                            <div
+                              key={idx}
+                              className={`rounded-xl border p-4 ${issue.status === "fail"
+                                ? "border-red-100 bg-red-50/40"
+                                : "border-amber-100 bg-amber-50/30"
+                                }`}
+                            >
+                              {/* Top row */}
+                              <div className="flex items-start justify-between gap-3 mb-3">
+                                <div className="flex items-start gap-2">
+                                  {issue.status === "fail" ? (
+                                    <XCircle className="h-[15px] w-[15px] text-red-500 mt-0.5 shrink-0" />
+                                  ) : (
+                                    <AlertTriangle className="h-[15px] w-[15px] text-amber-500 mt-0.5 shrink-0" />
+                                  )}
+                                  <span className="text-[13px] font-semibold text-slate-800 leading-snug">
+                                    {issue.check_name}
+                                  </span>
+                                </div>
+                                <span
+                                  className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase ring-1 ${issue.severity === "critical"
+                                    ? "bg-red-50 text-red-700 ring-red-200"
+                                    : issue.severity === "medium"
+                                      ? "bg-amber-50 text-amber-700 ring-amber-200"
+                                      : "bg-slate-100 text-slate-500 ring-slate-200"
+                                    }`}
+                                >
+                                  {issue.severity}
+                                </span>
+                              </div>
+
+                              {/* Body */}
+                              <div className="ml-[23px] space-y-2.5">
+                                <div>
+                                  <p className="text-[10px] font-bold tracking-widest uppercase text-slate-400 mb-1">
+                                    Problem
+                                  </p>
+                                  <p className="text-[12px] text-slate-600 leading-relaxed">
+                                    {issue.message}
+                                  </p>
+                                </div>
+
+                                {issue.fix_recommendation && (
+                                  <div className="rounded-lg bg-white border border-blue-100 p-3">
+                                    <p className="text-[10px] font-bold tracking-widest uppercase text-blue-500 mb-1 flex items-center gap-1.5">
+                                      <Wrench className="h-2.5 w-2.5" />
+                                      Solution
+                                    </p>
+                                    <p className="text-[12px] text-slate-700 leading-relaxed">
+                                      {issue.fix_recommendation}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                );
+              })}
+          </Accordion>
         </div>
       )}
     </div>
