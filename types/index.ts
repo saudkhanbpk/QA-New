@@ -8,7 +8,8 @@ export type Category =
   | "security"
   | "seo"
   | "quality"
-  | "others";
+  | "others"
+  | "structure";
 export type Viewport = "mobile" | "tablet" | "desktop";
 export type Browser = "chromium" | "firefox" | "webkit";
 

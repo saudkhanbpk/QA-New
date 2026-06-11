@@ -661,7 +661,7 @@ async function runTests(
         fix_recommendation: "null",
         screenshot_url: null,
         inner_pages_results: innerPagesArray as [{ url: string }],
-      });
+      }); 
 
       // ── CORE WEB VITALS via Google PageSpeed Insights API ─────────────────────
       // Fires all (page × strategy) calls in parallel — no sequential waiting.
@@ -988,6 +988,11 @@ async function runTests(
           const si = Math.round((audits["speed-index"]?.numericValue ?? 0)) / 1000;
           const tti = Math.round((audits["interactive"]?.numericValue ?? 0)) / 1000;
 
+          // ── RAW LIGHTHOUSE REPORT DUMP ───────────────────────────────────────
+          // Full lhr object exactly as returned by Lighthouse, printed per viewport.
+          logger.info(`\n===== LIGHTHOUSE RAW REPORT [${vName}] START =====\n` + JSON.stringify(lhr, null, 2) + `\n===== LIGHTHOUSE RAW REPORT [${vName}] END =====\n`);
+          // ── END RAW LIGHTHOUSE REPORT DUMP ───────────────────────────────────
+
           // 1. Performance
           const perfScore = Math.round((lhr.categories.performance?.score ?? 0) * 100);
           results.push({
@@ -1017,6 +1022,319 @@ async function runTests(
             message: `Best Practices score: ${bpScore}/100 (${vName})`,
             fix_recommendation: bpScore < 90 ? "Review web best practices for security and modern web standards." : "", screenshot_url: null
           });
+
+          // ── STRUCTURE CHECKS (Desktop only — values are page-level, same across viewports) ──
+          // These use Lighthouse's already-collected network-requests audit.
+          // No extra browser launches or HTTP calls needed.
+          if (viewport === "desktop") try {
+            const networkItems: any[] = audits["network-requests"]?.details?.items ?? [];
+
+            // Detect HTTP version from the first main-document request
+            const mainRequest = networkItems.find((r: any) =>
+              r.resourceType === "Document" || r.url === url
+            );
+            const protocol: string = (mainRequest?.protocol ?? "h2").toLowerCase();
+            const isHttp2 = protocol.startsWith("h2") || protocol === "quic";
+
+            // ── 1. Keep-Alive ──────────────────────────────────────────────────
+            // Only relevant for HTTP/1.1. HTTP/2 multiplexes over a single connection by default.
+            if (!isHttp2) {
+              // Check if the keep-alive header was present on the main response
+              const keepAlivePresent = (mainRequest?.responseHeaders ?? []).some(
+                (h: any) => h.name?.toLowerCase() === "connection" &&
+                  h.value?.toLowerCase().includes("keep-alive")
+              );
+              results.push({
+                test_run_id: testRunId,
+                category: "structure",
+                check_name: `Enable Keep-Alive (${vName})`,
+                status: keepAlivePresent ? "pass" : "fail",
+                severity: keepAlivePresent ? "low" : "medium",
+                message: keepAlivePresent
+                  ? `Keep-Alive is enabled — HTTP/1.1 connections are reused (${vName})`
+                  : `Keep-Alive is NOT enabled — each HTTP/1.1 request opens a new connection, increasing load time (${vName})`,
+                fix_recommendation: keepAlivePresent ? "" :
+                  "Enable Keep-Alive on your web server. In Nginx: add 'keepalive_timeout 65;'. In Apache: ensure 'KeepAlive On' is set in httpd.conf. This allows multiple files to download over a single connection.",
+                screenshot_url: null,
+              });
+            } else {
+              // HTTP/2 — Keep-Alive not applicable, pass automatically
+              results.push({
+                test_run_id: testRunId,
+                category: "structure",
+                check_name: `Enable Keep-Alive (${vName})`,
+                status: "pass",
+                severity: "low",
+                message: `Keep-Alive not applicable — page uses ${protocol.toUpperCase()} which multiplexes connections by default (${vName})`,
+                fix_recommendation: "",
+                screenshot_url: null,
+              });
+            }
+
+            // ── 2. CSS Sprites / Image Requests ───────────────────────────────
+            // Count small raster images that could be combined into a sprite sheet
+            const smallImages = networkItems.filter((r: any) => {
+              if (r.resourceType !== "Image") return false;
+              const url: string = r.url ?? "";
+              // Skip SVG (resolution-independent) and data URIs and icons already on CDN
+              if (url.startsWith("data:")) return false;
+              if (/\.svg(\?|$)/i.test(url)) return false;
+              const sizeKB = (r.transferSize ?? 0) / 1024;
+              // Small images < 10KB are candidates for spriting
+              return sizeKB > 0 && sizeKB < 10;
+            });
+
+            // HTTP/2 multiplexes so spriting is less critical — use higher threshold
+            const spriteThreshold = isHttp2 ? 8 : 4;
+            const spritePass = smallImages.length < spriteThreshold;
+            results.push({
+              test_run_id: testRunId,
+              category: "structure",
+              check_name: `Combine Images Using CSS Sprites (${vName})`,
+              status: spritePass ? "pass" : "warning",
+              severity: spritePass ? "low" : "medium",
+              message: spritePass
+                ? `Image requests are optimized — ${smallImages.length} small image(s) detected, below the ${spriteThreshold}-request threshold (${vName})`
+                : `${smallImages.length} small image(s) could be combined into a CSS sprite sheet to reduce HTTP requests (${vName}, threshold: ${spriteThreshold} for ${isHttp2 ? "HTTP/2" : "HTTP/1.1"})`,
+              fix_recommendation: spritePass ? "" :
+                "Combine small icons, logos, and UI images into a single sprite sheet image. Use CSS background-position to display individual images. Tools: CSS Sprite Generator, Compass, or Grunt/Gulp plugins.",
+              screenshot_url: null,
+            });
+
+            // ── 3. CDN Usage ──────────────────────────────────────────────────
+            const KNOWN_CDNS = [
+              "cloudflare.com", "cloudfront.net", "fastly.net", "akamaized.net",
+              "akamai.net", "cdn.jsdelivr.net", "unpkg.com", "cdnjs.cloudflare.com",
+              "static.cloudflare.com", "azureedge.net", "azurefd.net",
+              "globalcdn.net", "stackpathdns.com", "bunnycdn.com", "b-cdn.net",
+              "cdn77.com", "keycdn.com", "edgecast.net", "llnwd.net",
+              "gstatic.com", "googleapis.com", "bootstrapcdn.com",
+              "ajax.googleapis.com", "fonts.gstatic.com", "fontawesome.com",
+            ];
+
+            // const isCdnDomain = (domain: string): boolean => {
+            //   const d = domain.replace(/^www\./, "");
+            //   return KNOWN_CDNS.some(cdn => d === cdn || d.endsWith(`.${cdn}`));
+            // };
+
+            // Check static assets (images, JS, CSS, fonts) served from origin vs CDN
+            const staticRequests = networkItems.filter((r: any) =>
+              ["Image", "Script", "Stylesheet", "Font"].includes(r.resourceType ?? "")
+              && r.url?.startsWith("http")
+            );
+
+            const originDomain = new URL(url).hostname.replace(/^www\./, "");
+            const nonCdnStatics = staticRequests.filter((r: any) => {
+              try {
+                const reqDomain = new URL(r.url).hostname.replace(/^www\./, "");
+                // Must be served from origin (not already on a third-party CDN)
+                return reqDomain === originDomain || reqDomain.endsWith(`.${originDomain}`);
+              } catch { return false; }
+            });
+
+            const cdnPass = nonCdnStatics.length === 0;
+            const cdnStatus = nonCdnStatics.length <= 5 ? "warning" : "fail";
+
+            results.push({
+              test_run_id: testRunId,
+              category: "structure",
+              check_name: `Use a Content Delivery Network (CDN) (${vName})`,
+              status: cdnPass ? "pass" : cdnStatus,
+              severity: cdnPass ? "low" : nonCdnStatics.length > 10 ? "medium" : "low",
+              message: cdnPass
+                ? `Static assets are served via CDN — global users will experience low latency (${vName})`
+                : `${nonCdnStatics.length} static asset(s) are served directly from your origin server without a CDN (${vName}). Users far from your server will experience higher latency.`,
+              fix_recommendation: cdnPass ? "" :
+                "Use a CDN like Cloudflare (free tier available) to cache and serve your static assets from edge locations worldwide. This reduces latency for global users significantly. Point your domain through Cloudflare and enable caching.",
+              screenshot_url: null,
+            });
+
+            // ── 4. Avoid Chaining Critical Requests ──────────────────────────
+            // Reads lhr.audits["critical-request-chains"] — already collected by Lighthouse
+            const criticalChainsAudit = audits["critical-request-chains"];
+            if (criticalChainsAudit) {
+              const chainCount = criticalChainsAudit.details?.chains
+                ? Object.keys(criticalChainsAudit.details.chains).length
+                : 0;
+              const maxLatencyMs = criticalChainsAudit.numericValue ?? 0;
+
+              // Walk chains preserving depth so UI can render tree indentation
+              // Format: "CHAIN_NODE:depth:url:sizeKB:durationMs"
+              const chainNodes: { depth: number; url: string; sizeKB: number; durationMs: number }[] = [];
+              const walkChains = (chains: any, depth: number) => {
+                if (!chains) return;
+                for (const key of Object.keys(chains)) {
+                  const node = chains[key];
+                  if (node.request?.url) {
+                    chainNodes.push({
+                      depth,
+                      url: node.request.url,
+                      sizeKB: Math.round((node.request.transferSize ?? 0) / 1024),
+                      durationMs: Math.round((node.request.endTime ?? 0) - (node.request.startTime ?? 0)),
+                    });
+                  }
+                  if (node.children) walkChains(node.children, depth + 1);
+                }
+              };
+              walkChains(criticalChainsAudit.details?.chains, 0);
+
+              const chainPass = chainCount === 0;
+
+              // Encode tree as special lines: "CHAIN_NODE:depth|url|sizeKB|durationMs"
+              // This lets the UI reconstruct the tree with correct indentation
+              const chainLines = chainNodes.slice(0, 20).map(n =>
+                `CHAIN_NODE:${n.depth}|${n.url}|${n.sizeKB}|${n.durationMs}`
+              ).join("\n");
+
+              results.push({
+                test_run_id: testRunId,
+                category: "structure",
+                check_name: `Avoid Chaining Critical Requests (${vName})`,
+                status: chainPass ? "pass" : chainCount <= 3 ? "warning" : "fail",
+                severity: chainPass ? "low" : chainCount <= 3 ? "medium" : "critical",
+                message: chainPass
+                  ? `No critical request chains detected — render-blocking dependencies are minimal (${vName})`
+                  : `${chainCount} critical request chain(s) found. Maximum critical path latency: ${Math.round(maxLatencyMs)}ms (${vName}).\n${chainLines}`,
+                fix_recommendation: chainPass ? "" :
+                  "Reduce critical request chains by inlining critical CSS, using rel='preload' for key resources, deferring non-critical scripts, and splitting large CSS files. Each chain level adds a full round-trip before the browser can render.",
+                screenshot_url: null,
+              });
+            }
+
+            // ── 5. Avoid Enormous Network Payloads ───────────────────────────
+            // Reads lhr.audits["total-byte-weight"]
+            const totalByteAudit = audits["total-byte-weight"];
+            if (totalByteAudit) {
+              const totalKB = Math.round((totalByteAudit.numericValue ?? 0) / 1024);
+              const payloadItems: any[] = totalByteAudit.details?.items ?? [];
+
+              // Top offenders by size
+              const topItems = payloadItems
+                .slice(0, 8)
+                .map((item: any) => ({
+                  url: (item.url ?? "").slice(0, 80),
+                  sizeKB: Math.round((item.totalBytes ?? 0) / 1024),
+                }));
+              const detailLines = topItems.map(i => `• ${i.url} — ${i.sizeKB}KB`).join("\n");
+
+              const payloadPass = totalKB < 1600;  // Google threshold: 1600KB
+              results.push({
+                test_run_id: testRunId,
+                category: "structure",
+                check_name: `Avoid Enormous Network Payloads (${vName})`,
+                status: payloadPass ? "pass" : totalKB < 4000 ? "warning" : "fail",
+                severity: payloadPass ? "low" : totalKB < 4000 ? "medium" : "critical",
+                message: payloadPass
+                  ? `Total page payload is ${totalKB}KB — within the 1,600KB recommended limit (${vName})`
+                  : `Total page payload is ${totalKB}KB — exceeds the 1,600KB recommended limit (${vName}). Largest resources:\n${detailLines}`,
+                fix_recommendation: payloadPass ? "" :
+                  "Compress images (use WebP/AVIF), enable Gzip/Brotli on your server, remove unused CSS/JS, split large bundles with code splitting, and lazy-load below-the-fold content.",
+                screenshot_url: null,
+              });
+            }
+
+            // ── 6. Properly Size Images ───────────────────────────────────────
+            // Reads lhr.audits["uses-responsive-images"]
+            const responsiveImagesAudit = audits["uses-responsive-images"];
+            if (responsiveImagesAudit) {
+              const wastedKB = Math.round((responsiveImagesAudit.numericValue ?? 0) / 1024);
+              const imgItems: any[] = responsiveImagesAudit.details?.items ?? [];
+
+              const topImages = imgItems.slice(0, 8).map((item: any) => ({
+                url: (item.url ?? item.node?.nodeLabel ?? "").slice(0, 80),
+                wastedKB: Math.round((item.wastedBytes ?? 0) / 1024),
+                totalKB: Math.round((item.totalBytes ?? 0) / 1024),
+              }));
+              const detailLines = topImages.map(i =>
+                `• ${i.url} — ${i.totalKB}KB downloaded, ${i.wastedKB}KB wasted`
+              ).join("\n");
+
+              const imgPass = wastedKB < 100;
+              results.push({
+                test_run_id: testRunId,
+                category: "structure",
+                check_name: `Properly Size Images (${vName})`,
+                status: imgPass ? "pass" : wastedKB < 500 ? "warning" : "fail",
+                severity: imgPass ? "low" : wastedKB < 500 ? "medium" : "critical",
+                message: imgPass
+                  ? `Images are appropriately sized — potential savings below 100KB (${vName})`
+                  : `Oversized images are wasting ~${wastedKB}KB of bandwidth (${vName}). Affected files:\n${detailLines}`,
+                fix_recommendation: imgPass ? "" :
+                  "Serve images at the correct display dimensions. Use srcset/sizes for responsive images, resize images server-side before delivery, and consider next-gen formats (WebP, AVIF). Avoid serving 2000px images displayed at 200px.",
+                screenshot_url: null,
+              });
+            }
+
+            // ── 7. Avoid Large Layout Shifts (CLS detail) ────────────────────
+            // Reads lhr.audits["layout-shift-elements"]
+            const layoutShiftAudit = audits["layout-shift-elements"];
+            if (layoutShiftAudit) {
+              const shiftItems: any[] = layoutShiftAudit.details?.items ?? [];
+              const shiftCount = shiftItems.length;
+
+              const topShifts = shiftItems.slice(0, 8).map((item: any) => ({
+                label: item.node?.nodeLabel ?? item.node?.snippet ?? "unknown element",
+                score: (item.score ?? 0).toFixed(4),
+              }));
+              const detailLines = topShifts.map(s =>
+                `• ${s.label.slice(0, 80)} — shift score: ${s.score}`
+              ).join("\n");
+
+              const shiftPass = shiftCount === 0;
+              results.push({
+                test_run_id: testRunId,
+                category: "structure",
+                check_name: `Avoid Large Layout Shifts (${vName})`,
+                status: shiftPass ? "pass" : shiftCount <= 3 ? "warning" : "fail",
+                severity: shiftPass ? "low" : shiftCount <= 3 ? "medium" : "critical",
+                message: shiftPass
+                  ? `No significant layout shifts detected — page is visually stable (${vName})`
+                  : `${shiftCount} element(s) causing layout shifts (${vName}). Unstable elements:\n${detailLines}`,
+                fix_recommendation: shiftPass ? "" :
+                  "Set explicit width/height on images and video elements. Avoid injecting content above existing content after load. Reserve space for ads/embeds. Use CSS transform for animations instead of properties that trigger layout.",
+                screenshot_url: null,
+              });
+            }
+
+            // ── 8. Efficient Cache Policy ─────────────────────────────────────
+            // Reads lhr.audits["uses-long-cache-ttl"]
+            const cacheAudit = audits["uses-long-cache-ttl"];
+            if (cacheAudit) {
+              const wastedKB = Math.round((cacheAudit.numericValue ?? 0) / 1024);
+              const cacheItems: any[] = cacheAudit.details?.items ?? [];
+
+              const topUncached = cacheItems.slice(0, 8).map((item: any) => ({
+                url: (item.url ?? "").slice(0, 80),
+                cacheLifetimeMs: item.cacheLifetimeMs ?? 0,
+                sizeKB: Math.round((item.totalBytes ?? 0) / 1024),
+              }));
+              const detailLines = topUncached.map(i => {
+                const ttlHours = i.cacheLifetimeMs > 0
+                  ? `${Math.round(i.cacheLifetimeMs / 3600000)}h TTL`
+                  : "no cache";
+                return `• ${i.url} — ${i.sizeKB}KB (${ttlHours})`;
+              }).join("\n");
+
+              const cachePass = wastedKB < 50;
+              results.push({
+                test_run_id: testRunId,
+                category: "structure",
+                check_name: `Serve Static Assets With Efficient Cache Policy (${vName})`,
+                status: cachePass ? "pass" : wastedKB < 500 ? "warning" : "fail",
+                severity: cachePass ? "low" : wastedKB < 500 ? "medium" : "critical",
+                message: cachePass
+                  ? `Static assets have efficient cache headers — repeat visitors load from cache (${vName})`
+                  : `~${wastedKB}KB of static assets have short or missing cache headers — repeat visitors re-download unnecessarily (${vName}). Affected files:\n${detailLines}`,
+                fix_recommendation: cachePass ? "" :
+                  "Set long cache TTLs on static assets: Cache-Control: max-age=31536000, immutable for versioned assets (CSS, JS with hashes in filename). Use Cache-Control: max-age=86400 for images. Implement cache busting via file name hashing in your build process.",
+                screenshot_url: null,
+              });
+            }
+
+          } catch (structureErr) {
+            logger.warn(`[Structure] Checks failed for ${vName}:`, structureErr);
+          }
+          // ── END STRUCTURE CHECKS ──────────────────────────────────────────────
 
           // 4. SEO
           const seoScore = Math.round((lhr.categories.seo?.score ?? 0) * 100);

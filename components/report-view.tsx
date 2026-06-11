@@ -12,6 +12,8 @@ import { CheckCircle2, XCircle, AlertTriangle, Download, Globe, Clock, Monitor, 
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import type { TestReport, TestResult, Severity, ResultStatus, Category, PageSize, CwvEntry, ThirdPartyAnalysis, ThirdPartyEntity } from "@/types";
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+type _StructureCategory = Category; // ensures "structure" is in scope
 interface ReportViewProps { report: TestReport; }
 
 export function ReportView({ report }: ReportViewProps) {
@@ -38,6 +40,7 @@ export function ReportView({ report }: ReportViewProps) {
     seo: results.filter((r) => r.category === "seo"),
     quality: results.filter((r) => r.category === "quality"),
     others: results.filter((r) => r.category === "others"),
+    structure: results.filter((r) => r.category === "structure"),
   };
 
 
@@ -510,16 +513,31 @@ export function ReportView({ report }: ReportViewProps) {
 
         let perfScore: number | null = null;
         let structureScore: number | null = null;
-        for (const r of perfResults) {
+
+        // Always prefer Desktop values for the top score card
+        const desktopPerfResults = results.filter(r =>
+          r.category === "performance" && r.check_name.toLowerCase().includes("(desktop)")
+        );
+        const desktopOthersResults = results.filter(r =>
+          r.category === "others" && r.check_name.toLowerCase().includes("(desktop)")
+        );
+
+        // perfScore: desktop first, then any viewport
+        for (const r of [...desktopPerfResults, ...perfResults]) {
           if (!perfScore) {
             const m = r.message.match(/performance[:\s]+(\d+)/i) || r.message.match(/score[:\s]+(\d+)/i);
-            if (m) perfScore = parseInt(m[1]);
-          }
-          if (!structureScore) {
-            const m = r.message.match(/(?:structure|best.practices|accessibility)[:\s]+(\d+)/i);
-            if (m) structureScore = parseInt(m[1]);
+            if (m) { perfScore = parseInt(m[1]); break; }
           }
         }
+
+        // structureScore (Best Practices): desktop first, then any
+        for (const r of [...desktopOthersResults, ...results.filter(r => r.category === "others")]) {
+          if (!structureScore) {
+            const m = r.message.match(/best\s*practices\s*score[:\s]+(\d+)/i);
+            if (m) { structureScore = parseInt(m[1]); break; }
+          }
+        }
+
         if (!perfScore) perfScore = run.overall_score;
         if (!structureScore) structureScore = run.overall_score;
 
@@ -661,7 +679,8 @@ export function ReportView({ report }: ReportViewProps) {
           <TabsTrigger value="performance" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">Performance</TabsTrigger>
           <TabsTrigger value="inner_pages" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">Inner Pages</TabsTrigger>
           <TabsTrigger value="broken_links" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">Broken Links</TabsTrigger>
-          <TabsTrigger value="compatibility" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">Cross-Browser</TabsTrigger>
+          <TabsTrigger value="compatibility" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">Structure</TabsTrigger>
+          <TabsTrigger value="cross_browser" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">Cross-Browser</TabsTrigger>
           <TabsTrigger value="security" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">Security</TabsTrigger>
           <TabsTrigger value="others" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">Other</TabsTrigger>
           {/* <TabsTrigger value="waterfall" className="text-xs px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all opacity-50 cursor-not-allowed">Waterfall</TabsTrigger>
@@ -695,8 +714,14 @@ export function ReportView({ report }: ReportViewProps) {
             </TabsContent>
 
             <TabsContent value="compatibility" className="space-y-3">
+              <StructureTabContent results={results} />
+            </TabsContent>
+
+            <TabsContent value="cross_browser" className="space-y-3">
               <CategoryHeader results={byCategory.compatibility} />
-              {byCategory.compatibility.length === 0 ? <EmptyState label="cross-browser" /> : byCategory.compatibility.map((r) => <ResultCard key={r.id} result={r} />)}
+              {byCategory.compatibility.length === 0
+                ? <EmptyState label="cross-browser" />
+                : byCategory.compatibility.map((r) => <ResultCard key={r.id} result={r} />)}
             </TabsContent>
 
             <TabsContent value="security" className="space-y-3">
@@ -1939,6 +1964,381 @@ function ThirdPartyAnalysisCard({ result }: { result: TestResult }) {
               <p className="text-xs text-blue-800">{result.fix_recommendation}</p>
             </div>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── STRUCTURE TAB ─────────────────────────────────────────────────────────────
+
+function StructureTabContent({ results }: { results: TestResult[] }) {
+  const [activeFilter, setActiveFilter] = useState<string>("All");
+
+  const structureResults = results.filter(r =>
+    r.category === "structure" &&
+    r.check_name !== "Internal Pages Discovery" &&
+    !r.check_name.toLowerCase().includes("(mobile)") &&
+    !r.check_name.toLowerCase().includes("(tablet)")
+  );
+
+  const filters = ["All", "LCP", "TBT", "CLS", "CDN", "Cache"];
+
+  const filtered = structureResults.filter(r => {
+    if (activeFilter === "All") return true;
+    const cn = r.check_name.toLowerCase();
+    const f = activeFilter.toLowerCase();
+    if (f === "lcp") return cn.includes("largest") || cn.includes("image") || cn.includes("payload");
+    if (f === "tbt") return cn.includes("blocking") || cn.includes("chain") || cn.includes("task");
+    if (f === "cls") return cn.includes("layout") || cn.includes("shift");
+    if (f === "cdn") return cn.includes("cdn") || cn.includes("content delivery");
+    if (f === "cache") return cn.includes("cache");
+    return cn.includes(f);
+  });
+
+  const passCount = structureResults.filter(r => r.status === "pass").length;
+  const totalCount = structureResults.length;
+
+  return (
+    <div className="space-y-4 py-4">
+      {/* Header + filter bar */}
+      <div className="flex items-center justify-between">
+        <div className="space-y-1">
+          <h2 className="text-xl font-medium text-slate-700">Structure Audits</h2>
+          <p className="text-xs text-slate-500">
+            How well your page is built for optimal performance. {passCount}/{totalCount} checks passed.
+          </p>
+        </div>
+        <div className="flex bg-slate-100 p-0.5 rounded-sm">
+          {filters.map(f => (
+            <button
+              key={f}
+              onClick={() => setActiveFilter(f)}
+              className={`px-3 py-1 text-[10px] font-bold rounded-sm transition-all ${
+                activeFilter === f
+                  ? "bg-[#2d5d85] text-white"
+                  : "text-slate-500 hover:text-slate-700 hover:bg-slate-200"
+              }`}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <p className="text-xs text-slate-500">
+        These audits reflect how well your site is built for fast, reliable delivery to all users.
+      </p>
+
+      {filtered.length === 0 ? (
+        <div className="text-center py-10 text-sm text-slate-400">
+          No structure issues found for this filter.
+        </div>
+      ) : (
+        <div className="space-y-1">
+          {filtered.slice(0, 30).map(issue => {
+            // Extract the summary line (before first \n) for the accordion header
+            const summaryLine = issue.message.split("\n")[0];
+            // Detail lines after the first \n
+            const detailLines = issue.message.includes("\n")
+              ? issue.message.split("\n").slice(1).filter(Boolean)
+              : [];
+
+            const metricTags: { label: string; show: boolean }[] = [
+              { label: "LCP", show: issue.check_name.toLowerCase().includes("largest") || issue.check_name.toLowerCase().includes("image") },
+              { label: "CLS", show: issue.check_name.toLowerCase().includes("shift") || issue.check_name.toLowerCase().includes("layout") },
+              { label: "TBT", show: issue.check_name.toLowerCase().includes("blocking") || issue.check_name.toLowerCase().includes("chain") },
+              { label: "CDN", show: issue.check_name.toLowerCase().includes("cdn") },
+              { label: "Cache", show: issue.check_name.toLowerCase().includes("cache") },
+            ];
+
+            return (
+              <Accordion type="single" collapsible key={issue.id}>
+                <AccordionItem value="item-1" className="border rounded-sm overflow-hidden bg-[#f9f9f9]">
+                  <AccordionTrigger className="hover:no-underline py-0 px-0 group">
+                    <div className="flex w-full items-stretch">
+                      {/* Severity badge */}
+                      <div className={`w-28 flex items-center justify-center text-[11px] font-bold text-white shrink-0 transition-colors ${
+                        issue.severity === "critical"
+                          ? "bg-[#e74c3c] group-hover:bg-[#d63031]"
+                          : issue.severity === "medium"
+                            ? "bg-[#f39c12] group-hover:bg-[#d68910]"
+                            : "bg-[#a3c24d] group-hover:bg-[#8da33f]"
+                      }`}>
+                        {issue.severity === "critical" ? "High" : issue.severity === "medium" ? "Medium" : issue.status === "pass" ? "Pass" : "Low"}
+                      </div>
+
+                      {/* Main row */}
+                      <div className="flex-1 flex items-center justify-between px-4 py-3 bg-white group-hover:bg-slate-50 transition-colors border-l border-slate-100">
+                        <div className="flex flex-col items-start gap-1">
+                          <div className="font-semibold text-[#2d5d85] text-[13px]">
+                            {issue.check_name.replace(/\s*\((Desktop|Mobile|Tablet)\)\s*$/i, "")}
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {/* Metric tags */}
+                            {metricTags.filter(t => t.show).map(t => (
+                              <span key={t.label} className="bg-slate-100 text-[9px] px-1 py-0.5 rounded text-slate-400 font-bold uppercase tracking-tight">
+                                {t.label}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="text-xs text-slate-500 font-mono pr-4 max-w-xs text-right truncate">
+                          {summaryLine}
+                        </div>
+                      </div>
+                    </div>
+                  </AccordionTrigger>
+
+                  <AccordionContent className="p-0 bg-white border-t border-slate-100">
+                    <div className="p-6 space-y-4">
+                      {/* Summary message */}
+                      <p className="text-sm text-slate-600 leading-relaxed italic">{summaryLine}</p>
+
+                      {/* File-level detail lines */}
+                      {detailLines.length > 0 && (
+                        <div className="bg-slate-50 rounded border border-slate-100 overflow-hidden">
+                          <div className="px-3 py-1.5 bg-slate-100 border-b border-slate-200">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                              {detailLines[0]?.startsWith("CHAIN_NODE:") ? "Initial Navigation" : "Affected Resources"}
+                            </span>
+                          </div>
+                          <div className="divide-y divide-slate-50 max-h-72 overflow-y-auto">
+                            {detailLines.map((line, i) => {
+                              // ── Chain tree nodes ──────────────────────────
+                              if (line.startsWith("CHAIN_NODE:")) {
+                                const parts = line.replace("CHAIN_NODE:", "").split("|");
+                                const depth = parseInt(parts[0] ?? "0");
+                                const nodeUrl = parts[1] ?? "";
+                                const sizeKB = parts[2] ?? "0";
+                                const durationMs = parts[3] ?? "0";
+                                const indent = depth * 20;
+                                const isRoot = depth === 0;
+                                return (
+                                  <div
+                                    key={i}
+                                    className="flex items-center px-3 py-2 hover:bg-slate-50 transition-colors"
+                                    style={{ paddingLeft: `${12 + indent}px` }}
+                                  >
+                                    {/* Tree connector lines */}
+                                    {depth > 0 && (
+                                      <span className="text-slate-300 mr-2 shrink-0 font-mono text-xs">
+                                        {"└─"}
+                                      </span>
+                                    )}
+                                    <div className="min-w-0 flex-1 flex items-center gap-2">
+                                      <a
+                                        href={nodeUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className={`text-[11px] hover:underline break-all font-mono truncate max-w-xs ${
+                                          isRoot ? "text-slate-700 font-semibold" : "text-[#2d5d85]"
+                                        }`}
+                                        title={nodeUrl}
+                                      >
+                                        {nodeUrl.length > 60 ? nodeUrl.slice(0, 60) + "…" : nodeUrl}
+                                      </a>
+                                      <span className="text-[10px] text-slate-400 shrink-0 whitespace-nowrap">
+                                        — {sizeKB}KB, {durationMs}ms
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              }
+
+                              // ── Regular bullet lines ──────────────────────
+                              const clean = line.replace(/^•\s*/, "");
+                              const urlMatch = clean.match(/^(https?:\/\/[^\s]+)/);
+                              const rest = urlMatch ? clean.slice(urlMatch[1].length) : clean;
+                              return (
+                                <div key={i} className="flex items-start gap-2 px-3 py-2 hover:bg-slate-50 transition-colors">
+                                  <span className="text-slate-300 text-[10px] mt-0.5 shrink-0">▸</span>
+                                  <div className="min-w-0 flex-1">
+                                    {urlMatch ? (
+                                      <div>
+                                        <a
+                                          href={urlMatch[1]}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="text-[11px] text-[#2d5d85] hover:underline break-all font-mono"
+                                        >
+                                          {urlMatch[1].length > 70 ? urlMatch[1].slice(0, 70) + "…" : urlMatch[1]}
+                                        </a>
+                                        {rest && <span className="text-[10px] text-slate-400 ml-1">{rest}</span>}
+                                      </div>
+                                    ) : (
+                                      <span className="text-[11px] text-slate-600">{clean}</span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Fix recommendation */}
+                      {issue.fix_recommendation && issue.status !== "pass" && (
+                        <div className="bg-blue-50 border-l-4 border-blue-400 p-4 text-xs text-blue-800 rounded-r shadow-sm">
+                          <span className="font-bold block mb-1 text-[10px] uppercase tracking-wider text-blue-600">How to Fix:</span>
+                          <p className="leading-normal">{issue.fix_recommendation}</p>
+                        </div>
+                      )}
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StructureCheckGroup({
+  checkType,
+  viewportResults,
+  hasIssue,
+  worstResult,
+}: {
+  checkType: string;
+  viewportResults: TestResult[];
+  hasIssue: boolean;
+  worstResult: TestResult;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  const overallStatus = viewportResults.some(r => r.status === "fail") ? "fail"
+    : viewportResults.some(r => r.status === "warning") ? "warning" : "pass";
+
+  const borderColor = overallStatus === "pass" ? "border-l-green-500"
+    : overallStatus === "warning" ? "border-l-yellow-500" : "border-l-red-500";
+
+  const CHECK_DESCRIPTIONS: Record<string, { desc: string; icon: string }> = {
+    "Enable Keep-Alive": {
+      icon: "🔗",
+      desc: "Checks whether your server reuses HTTP connections for multiple file downloads. Without Keep-Alive, each file opens a new connection — slower for HTTP/1.1 sites."
+    },
+    "Combine Images Using CSS Sprites": {
+      icon: "🖼️",
+      desc: "Checks if multiple small images (icons, UI elements) can be combined into a single sprite sheet to reduce HTTP requests. Less critical on HTTP/2 due to multiplexing."
+    },
+    "Use a Content Delivery Network (CDN)": {
+      icon: "🌍",
+      desc: "Checks whether static assets (images, JS, CSS) are served from a CDN edge location instead of your origin server. A CDN reduces latency for global users by serving from the nearest location."
+    },
+    "Avoid Chaining Critical Requests": {
+      icon: "🔗",
+      desc: "Checks whether important resources depend on other resources before they can load. Each chain level adds a full network round-trip before the browser can render content."
+    },
+    "Avoid Enormous Network Payloads": {
+      icon: "📦",
+      desc: "Checks the total download size of all page resources. Large payloads slow down load time and cost users data. Google recommends keeping total payload under 1,600KB."
+    },
+    "Properly Size Images": {
+      icon: "🖼️",
+      desc: "Checks whether images are served at the correct display dimensions. Serving a 2000px image displayed at 200px wastes bandwidth — only the displayed pixels are needed."
+    },
+    "Avoid Large Layout Shifts": {
+      icon: "📐",
+      desc: "Checks whether visible elements move after appearing on screen. Layout shifts frustrate users and hurt CLS score. Common causes: images without dimensions, late-loading fonts."
+    },
+    "Serve Static Assets With Efficient Cache Policy": {
+      icon: "💾",
+      desc: "Checks cache headers on static resources. Short or missing cache lifetimes force repeat visitors to re-download files they already have, increasing load time unnecessarily."
+    },
+  };
+
+  const info = CHECK_DESCRIPTIONS[checkType] ?? { icon: "⚙️", desc: "" };
+
+  return (
+    <div className={`bg-white rounded-xl border border-slate-100 border-l-4 ${borderColor} shadow-sm overflow-hidden`}>
+      {/* Header */}
+      <div className="flex items-start justify-between px-4 py-3 gap-3">
+        <div className="flex items-start gap-3 min-w-0">
+          <span className="text-xl mt-0.5 shrink-0">{info.icon}</span>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-semibold text-slate-800">{checkType}</span>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full
+                ${overallStatus === "pass" ? "bg-green-100 text-green-700" :
+                  overallStatus === "warning" ? "bg-yellow-100 text-yellow-700" :
+                    "bg-red-100 text-red-700"}`}>
+                {overallStatus === "pass" ? "✓ Pass" : overallStatus === "warning" ? "⚠ Warning" : "✗ Fail"}
+              </span>
+            </div>
+            {info.desc && (
+              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{info.desc}</p>
+            )}
+          </div>
+        </div>
+        <button
+          onClick={() => setExpanded(e => !e)}
+          className="text-xs text-slate-400 hover:text-slate-600 shrink-0 mt-0.5"
+        >
+          {expanded ? "▲" : "▼"}
+        </button>
+      </div>
+
+      {/* Per-viewport results — always show summary, expand for details */}
+      <div className="px-4 pb-3 flex flex-wrap gap-2">
+        {viewportResults.map(r => {
+          const vp = r.check_name.match(/\((Desktop|Mobile|Tablet)\)/i)?.[1] ?? "";
+          return (
+            <span key={r.id} className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-full
+              ${r.status === "pass" ? "bg-green-50 text-green-700 border border-green-200" :
+                r.status === "warning" ? "bg-yellow-50 text-yellow-700 border border-yellow-200" :
+                  "bg-red-50 text-red-700 border border-red-200"}`}>
+              {r.status === "pass" ? "✓" : r.status === "warning" ? "⚠" : "✗"} {vp}
+            </span>
+          );
+        })}
+      </div>
+
+      {expanded && (
+        <div className="border-t border-slate-100 divide-y divide-slate-50">
+          {viewportResults.map(r => (
+            <div key={r.id} className="px-4 py-3">
+              {/* Split message into summary line + file detail lines */}
+              {r.message.includes("\n") ? (
+                <div className="space-y-2">
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    {r.message.split("\n")[0]}
+                  </p>
+                  <div className="bg-slate-50 rounded-lg border border-slate-100 p-2.5 space-y-1 max-h-48 overflow-y-auto">
+                    {r.message.split("\n").slice(1).filter(Boolean).map((line, i) => (
+                      <div key={i} className="flex items-start gap-1.5">
+                        <span className="text-slate-400 text-[10px] mt-0.5 shrink-0">•</span>
+                        {line.startsWith("• http") ? (
+                          <a
+                            href={line.replace(/^•\s*/, "").split(" —")[0]}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[10px] text-blue-600 hover:underline break-all leading-relaxed"
+                          >
+                            {line.replace(/^•\s*/, "")}
+                          </a>
+                        ) : (
+                          <span className="text-[10px] text-slate-500 break-all leading-relaxed">
+                            {line.replace(/^•\s*/, "")}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-600 leading-relaxed">{r.message}</p>
+              )}
+              {r.fix_recommendation && r.status !== "pass" && (
+                <div className="mt-2 bg-blue-50 border-l-4 border-blue-400 rounded-r-lg p-2.5">
+                  <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wider mb-1">How to fix</p>
+                  <p className="text-xs text-blue-800">{r.fix_recommendation}</p>
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       )}
     </div>
