@@ -545,7 +545,7 @@ export function ReportView({ report }: ReportViewProps) {
         const tbt = extractMetric("TBT") ?? "–";
         const cls = extractMetric("CLS") ?? "–";
 
-        const grade = perfScore >= 90 ? "A" : perfScore >= 80 ? "B" : perfScore >= 70 ? "C" : perfScore >= 60 ? "D" : "F";
+        const grade = perfScore >= 80 ? "A" : perfScore >= 65 ? "B" : perfScore >= 50 ? "C" : perfScore >= 35 ? "D" : "F";
 
         // Grade uses a green→yellow gradient like GTmetrix
         const gradeGradient =
@@ -1088,7 +1088,7 @@ function SummaryTabContent({ report }: { report: TestReport }) {
                   // Robust matching for abbreviations
                   const cn = r.check_name.toLowerCase();
                   const f = activeIssueFilter.toLowerCase();
-                  return cn.includes(f) || (f === 'fcp' && cn.includes('contentful paint')) || (f === 'lcp' && cn.includes('largest contentful paint')) || (f === 'tbt' && cn.includes('blocking time')) || (f === 'cls' && cn.includes('layout shift'));
+                  return cn.includes(f) || (f === 'fcp' && cn.includes('contentful paint')) || (f === 'lcp' && cn.includes('largest contentful paint')) || (f === 'tbt' && cn.includes('total blocking time')) || (f === 'cls' && cn.includes('layout shift'));
                 })
                 .slice(0, 20)
                 .map((issue, i) => (
@@ -1311,6 +1311,8 @@ function PerformanceTabContent({ results }: { results: TestResult[] }) {
             n === "first contentful paint" ? "fcp" : null,
             n === "largest contentful paint" ? "lcp" : null,
             n === "total blocking time" ? "tbt" : null,
+            n === "total blocking time" ? "smoothness" : null,
+            n === "total blocking time" ? "phone processing load" : null,
             n === "cumulative layout shift" ? "cls" : null,
             n === "time to interactive" ? "tti" : null,
             n === "speed index" ? "si" : null,
@@ -1359,11 +1361,14 @@ function PerformanceTabContent({ results }: { results: TestResult[] }) {
 }
 
 function PerformanceMetricCard({ name, result, showDetails }: { name: string, result?: TestResult, showDetails: boolean }) {
+  console.log("Test Results to see TBT", result)
   const rawValue = result?.message || "";
   const match = rawValue.match(/(\d+(\.\d+)?)\s*(ms|s|%|)/i);
   const value = match ? match[1] : "—";
   const unit = match ? match[3] : (name.includes('Shift') ? '' : 's');
   const num = parseFloat(value);
+
+
 
   const getStatus = () => {
     if (!result) return { label: "N/A", color: "bg-slate-50", header: "bg-slate-400", border: "border-l-slate-300", text: "text-slate-500", lightText: "text-white" };

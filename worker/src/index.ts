@@ -8,9 +8,9 @@ logger.info("--------------------------------------------------");
 
 // Redirect all console.* calls through the logger so existing code
 // automatically writes to the log file without individual replacements
-console.log   = (...args: unknown[]) => logger.info(args.map(String).join(" "));
-console.info  = (...args: unknown[]) => logger.info(args.map(String).join(" "));
-console.warn  = (...args: unknown[]) => logger.warn(args.map(String).join(" "));
+console.log = (...args: unknown[]) => logger.info(args.map(String).join(" "));
+console.info = (...args: unknown[]) => logger.info(args.map(String).join(" "));
+console.warn = (...args: unknown[]) => logger.warn(args.map(String).join(" "));
 console.error = (...args: unknown[]) => logger.error(args.map(String).join(" "));
 console.debug = (...args: unknown[]) => logger.debug(args.map(String).join(" "));
 
@@ -661,12 +661,12 @@ async function runTests(
         fix_recommendation: "null",
         screenshot_url: null,
         inner_pages_results: innerPagesArray as [{ url: string }],
-      }); 
+      });
 
       // ── CORE WEB VITALS via Google PageSpeed Insights API ─────────────────────
       // Fires all (page × strategy) calls in parallel — no sequential waiting.
       const psiApiKey = process.env.PSI_API_KEY || 'AIzaSyC3v1nNu85_b8WbY1Z2Y66EvVq_sC2CPxw'
-; // optional — higher quota when set
+        ; // optional — higher quota when set
       const pagesToScan = innerPagesArray.map((p) => p.url);
 
       if (pagesToScan.length > 0) {
@@ -703,17 +703,17 @@ async function runTests(
 
           try {
             logger.debug(`[CWV] → PSI ${strategy} ${pageUrl}`);
-            const res = await axios.get(apiUrl.toString(), { timeout: 30000 });
+            const res = await axios.get(apiUrl.toString(), { timeout: 60000 });
             const data = res.data;
 
             const lcp = extractMetric(data, "LARGEST_CONTENTFUL_PAINT_MS", "largest-contentful-paint");
-            const inp = extractMetric(data, "INTERACTION_TO_NEXT_PAINT",   "total-blocking-time");
+            const inp = extractMetric(data, "INTERACTION_TO_NEXT_PAINT", "total-blocking-time");
             const cls = extractMetric(data, "CUMULATIVE_LAYOUT_SHIFT_SCORE", "cumulative-layout-shift");
 
             const sources = [lcp.source, inp.source, cls.source];
             const dominantSource: "field" | "lab" | "none" =
               sources.includes("field") ? "field" :
-              sources.includes("lab")   ? "lab"   : "none";
+                sources.includes("lab") ? "lab" : "none";
 
             logger.info(`[CWV] ✓ ${strategy} ${pageUrl} | LCP=${lcp.value}ms INP=${inp.value}ms CLS=${cls.value} (${dominantSource})`);
 
@@ -990,7 +990,7 @@ async function runTests(
 
           // ── RAW LIGHTHOUSE REPORT DUMP ───────────────────────────────────────
           // Full lhr object exactly as returned by Lighthouse, printed per viewport.
-          logger.info(`\n===== LIGHTHOUSE RAW REPORT [${vName}] START =====\n` + JSON.stringify(lhr, null, 2) + `\n===== LIGHTHOUSE RAW REPORT [${vName}] END =====\n`);
+          // logger.info(`\n===== LIGHTHOUSE RAW REPORT [${vName}] START =====\n` + JSON.stringify(lhr, null, 2) + `\n===== LIGHTHOUSE RAW REPORT [${vName}] END =====\n`);
           // ── END RAW LIGHTHOUSE REPORT DUMP ───────────────────────────────────
 
           // 1. Performance
@@ -1331,6 +1331,250 @@ async function runTests(
               });
             }
 
+            // ── 9. Avoid Excessive DOM Size ──────────────────────────────────
+            const domSizeAudit = audits["dom-size"];
+            if (domSizeAudit) {
+              const domCount = domSizeAudit.numericValue ?? 0;
+              const domPass = domSizeAudit.score !== null && domSizeAudit.score >= 0.9;
+              results.push({
+                test_run_id: testRunId,
+                category: "structure",
+                check_name: `Avoid Excessive DOM Size (${vName})`,
+                status: domPass ? "pass" : (domSizeAudit.score !== null && domSizeAudit.score >= 0.5 ? "warning" : "fail"),
+                severity: domPass ? "low" : ((domSizeAudit.score !== null && domSizeAudit.score >= 0.5) ? "medium" : "critical"),
+                message: domPass
+                  ? `DOM size is well managed: ${domCount} elements (${vName})`
+                  : `Excessive DOM size: ${domCount} elements (${vName}). Large DOM trees require more memory and processing.`,
+                fix_recommendation: domPass ? "" : "Reduce DOM complexity by removing unnecessary wrapper elements, lazy-loading off-screen content, and using virtual scrolling for long lists.",
+                screenshot_url: null,
+              });
+            }
+
+            // ── 10. Avoid Long Main-Thread Tasks ─────────────────────────────
+            const longTasksAudit = audits["long-tasks"] || audits["mainthread-work-breakdown"];
+            if (longTasksAudit) {
+              const pass = longTasksAudit.score !== null && longTasksAudit.score >= 0.9;
+              results.push({
+                test_run_id: testRunId,
+                category: "structure",
+                check_name: `Avoid Long Main-Thread Tasks (${vName})`,
+                status: pass ? "pass" : ((longTasksAudit.score !== null && longTasksAudit.score >= 0.5) ? "warning" : "fail"),
+                severity: pass ? "low" : ((longTasksAudit.score !== null && longTasksAudit.score >= 0.5) ? "medium" : "critical"),
+                message: pass
+                  ? `Main-thread tasks are relatively short and non-blocking (${vName})`
+                  : `Long main-thread tasks detected that take over 50ms (${vName}). This delays user interactions.`,
+                fix_recommendation: pass ? "" : "Split long JavaScript tasks into smaller chunks. Defer non-critical scripts, use Web Workers for heavy computations, and optimize tracking codes.",
+                screenshot_url: null,
+              });
+            }
+
+            // ── 11. Ensure Text Remains Visible During Webfont Load ──────────
+            const fontDisplayAudit = audits["font-display"];
+            if (fontDisplayAudit) {
+              const pass = fontDisplayAudit.score !== null && fontDisplayAudit.score >= 0.9;
+              results.push({
+                test_run_id: testRunId,
+                category: "structure",
+                check_name: `Ensure Text Remains Visible During Webfont Load (${vName})`,
+                status: pass ? "pass" : "warning",
+                severity: pass ? "low" : "medium",
+                message: pass
+                  ? `Webfonts are properly configured to keep text visible during load (${vName})`
+                  : `Some webfonts lack proper configuration, causing invisible text while loading (${vName}).`,
+                fix_recommendation: pass ? "" : "Add 'font-display: swap' to your @font-face CSS declarations. This tells the browser to show fallback text immediately until the custom font finishes downloading.",
+                screenshot_url: null,
+              });
+            }
+
+            // ── 12. Serve Images In Next-Gen Formats ─────────────────────────
+            const modernImagesAudit = audits["modern-image-formats"];
+            if (modernImagesAudit) {
+              const wastedKB = Math.round((modernImagesAudit.numericValue ?? 0) / 1024);
+              const pass = modernImagesAudit.score !== null && modernImagesAudit.score >= 0.9;
+              results.push({
+                test_run_id: testRunId,
+                category: "structure",
+                check_name: `Serve Images In Next-Gen Formats (${vName})`,
+                status: pass ? "pass" : ((modernImagesAudit.score !== null && modernImagesAudit.score >= 0.5) ? "warning" : "fail"),
+                severity: pass ? "low" : ((modernImagesAudit.score !== null && modernImagesAudit.score >= 0.5) ? "medium" : "critical"),
+                message: pass
+                  ? `Images are served in modern, efficient formats (${vName})`
+                  : `Potential savings of ~${wastedKB}KB by serving images in next-gen formats (${vName}).`,
+                fix_recommendation: pass ? "" : "Convert standard JPEGs and PNGs to WebP or AVIF formats. These provide better compression and significantly smaller file sizes without noticeable quality loss.",
+                screenshot_url: null,
+              });
+            }
+
+            // ── 13. Reduce Unused JavaScript ─────────────────────────────────
+            const unusedJsAudit = audits["unused-javascript"];
+            if (unusedJsAudit) {
+              const wastedKB = Math.round((unusedJsAudit.numericValue ?? 0) / 1024);
+              const pass = unusedJsAudit.score !== null && unusedJsAudit.score >= 0.9;
+              results.push({
+                test_run_id: testRunId,
+                category: "structure",
+                check_name: `Reduce Unused JavaScript (${vName})`,
+                status: pass ? "pass" : ((unusedJsAudit.score !== null && unusedJsAudit.score >= 0.5) ? "warning" : "fail"),
+                severity: pass ? "low" : ((unusedJsAudit.score !== null && unusedJsAudit.score >= 0.5) ? "medium" : "critical"),
+                message: pass
+                  ? `JavaScript bundles are well optimized with minimal unused code (${vName})`
+                  : `~${wastedKB}KB of downloaded JavaScript is unused during page load (${vName}).`,
+                fix_recommendation: pass ? "" : "Remove dead code from your JavaScript bundles. Use tree-shaking, implement code-splitting to load parts of the script only when needed, and defer non-critical JS.",
+                screenshot_url: null,
+              });
+            }
+
+            // ── 14. Reduce JavaScript Execution Time ─────────────────────────
+            const bootupTimeAudit = audits["bootup-time"];
+            if (bootupTimeAudit) {
+              const wastedMs = Math.round(bootupTimeAudit.numericValue ?? 0);
+              const pass = bootupTimeAudit.score !== null && bootupTimeAudit.score >= 0.9;
+              results.push({
+                test_run_id: testRunId,
+                category: "structure",
+                check_name: `Reduce JavaScript Execution Time (${vName})`,
+                status: pass ? "pass" : ((bootupTimeAudit.score !== null && bootupTimeAudit.score >= 0.5) ? "warning" : "fail"),
+                severity: pass ? "low" : ((bootupTimeAudit.score !== null && bootupTimeAudit.score >= 0.5) ? "medium" : "critical"),
+                message: pass
+                  ? `JavaScript execution time is optimized (${vName})`
+                  : `High JavaScript execution time detected: ${wastedMs}ms (${vName}). Expensive scripts run on the main thread and delay interactivity.`,
+                fix_recommendation: pass ? "" : "Reduce JS execution time by code splitting, deferring non-critical scripts, removing unused third-party tags, and minimizing expensive computations on page load.",
+                screenshot_url: null,
+              });
+            }
+
+            // ── 15. Defer Offscreen Images ───────────────────────────────────
+            const offscreenImagesAudit = audits["offscreen-images"];
+            if (offscreenImagesAudit) {
+              const wastedKB = Math.round((offscreenImagesAudit.numericValue ?? 0) / 1024);
+              const pass = offscreenImagesAudit.score !== null && offscreenImagesAudit.score >= 0.9;
+              results.push({
+                test_run_id: testRunId,
+                category: "structure",
+                check_name: `Defer Offscreen Images (${vName})`,
+                status: pass ? "pass" : ((offscreenImagesAudit.score !== null && offscreenImagesAudit.score >= 0.5) ? "warning" : "fail"),
+                severity: pass ? "low" : ((offscreenImagesAudit.score !== null && offscreenImagesAudit.score >= 0.5) ? "medium" : "critical"),
+                message: pass
+                  ? `Offscreen images are properly deferred (${vName})`
+                  : `Hidden or offscreen images are loaded too early, wasting ~${wastedKB}KB bandwidth (${vName}).`,
+                fix_recommendation: pass ? "" : "Lazy-load images that are below the fold (outside the initial viewport) using the 'loading=\"lazy\"' HTML attribute or an Intersection Observer library.",
+                screenshot_url: null,
+              });
+            }
+
+            // ── 16. Reduce Initial Server Response Time ──────────────────────
+            const serverResponseAudit = audits["server-response-time"];
+            if (serverResponseAudit) {
+              const responseMs = Math.round(serverResponseAudit.numericValue ?? 0);
+              const pass = serverResponseAudit.score !== null && serverResponseAudit.score >= 0.9;
+              results.push({
+                test_run_id: testRunId,
+                category: "structure",
+                check_name: `Reduce Initial Server Response Time (${vName})`,
+                status: pass ? "pass" : ((serverResponseAudit.score !== null && serverResponseAudit.score >= 0.5) ? "warning" : "fail"),
+                severity: pass ? "low" : ((serverResponseAudit.score !== null && serverResponseAudit.score >= 0.5) ? "medium" : "critical"),
+                message: pass
+                  ? `Initial server response time (TTFB) is fast: ${responseMs}ms (${vName})`
+                  : `Slow server response time (TTFB): ${responseMs}ms (${vName}). This delays all subsequent requests.`,
+                fix_recommendation: pass ? "" : "Optimize server response time by utilizing caching, CDN edges, optimizing database queries, upgrading server hardware/scaling down backend load.",
+                screenshot_url: null,
+              });
+            }
+
+            // ── 17. Largest Contentful Paint (LCP) (Structure) ───────────────
+            const lcpAudit = audits["largest-contentful-paint"];
+            if (lcpAudit) {
+              const lcpMs = Math.round(lcpAudit.numericValue ?? 0);
+              const pass = lcpAudit.score !== null && lcpAudit.score >= 0.9;
+              results.push({
+                test_run_id: testRunId,
+                category: "structure",
+                check_name: `Largest Contentful Paint (LCP) Structure (${vName})`,
+                status: pass ? "pass" : ((lcpAudit.score !== null && lcpAudit.score >= 0.5) ? "warning" : "fail"),
+                severity: pass ? "low" : ((lcpAudit.score !== null && lcpAudit.score >= 0.5) ? "medium" : "critical"),
+                message: pass
+                  ? `LCP element renders quickly: ${lcpMs}ms (${vName})`
+                  : `Largest element takes too long to render: ${lcpMs}ms (${vName}). Users perceive the page as slow.`,
+                fix_recommendation: pass ? "" : "Prioritize the LCP element by preloading it and hosting critical images on a fast CDN. Avoid using client-side rendering for the main above-the-fold content.",
+                screenshot_url: null,
+              });
+            }
+
+            // ── 18. Avoid Serving Legacy JavaScript To Modern Browsers ───────
+            const legacyJsAudit = audits["legacy-javascript"];
+            if (legacyJsAudit && legacyJsAudit.score !== null) {
+              const pass = legacyJsAudit.score >= 0.9;
+              results.push({
+                test_run_id: testRunId,
+                category: "structure",
+                check_name: `Avoid Serving Legacy JavaScript To Modern Browsers (${vName})`,
+                status: pass ? "pass" : "warning",
+                severity: pass ? "low" : "medium",
+                message: pass
+                  ? `No unnecessary legacy JS sent to modern browsers (${vName})`
+                  : `Modern browsers are receiving legacy compatibility code (polyfills/transpiled syntax) (${vName}). This bloats the download size.`,
+                fix_recommendation: pass ? "" : "Implement the 'module/nomodule' pattern or update your build target (e.g., Babel config) to avoid serving ES5 transpiled code and polyfills to modern browsers.",
+                screenshot_url: null,
+              });
+            }
+
+            // ── 19. Minimize Main-Thread Work ────────────────────────────────
+            const mainThreadAudit = audits["mainthread-work-breakdown"];
+            if (mainThreadAudit) {
+              const mainThreadMs = Math.round(mainThreadAudit.numericValue ?? 0);
+              const pass = mainThreadAudit.score !== null && mainThreadAudit.score >= 0.9;
+              results.push({
+                test_run_id: testRunId,
+                category: "structure",
+                check_name: `Minimize Main-Thread Work (${vName})`,
+                status: pass ? "pass" : ((mainThreadAudit.score !== null && mainThreadAudit.score >= 0.5) ? "warning" : "fail"),
+                severity: pass ? "low" : ((mainThreadAudit.score !== null && mainThreadAudit.score >= 0.5) ? "medium" : "critical"),
+                message: pass
+                  ? `Main-thread workload is minimized: ${mainThreadMs}ms (${vName})`
+                  : `Heavy main-thread workload detected: ${mainThreadMs}ms (${vName}). This includes JS execution, parsing, styling, and layout operations.`,
+                fix_recommendation: pass ? "" : "Reduce the time spent on the main thread by optimizing third-party scripts, adopting a web worker for heavy calculations, and minimizing complex CSS layouts and DOM size.",
+                screenshot_url: null,
+              });
+            }
+
+            // ── 20. Eliminate Render-Blocking Resources ──────────────────────
+            const renderBlockingAudit = audits["render-blocking-resources"];
+            if (renderBlockingAudit) {
+              const wastedMs = Math.round(renderBlockingAudit.numericValue ?? 0);
+              const pass = renderBlockingAudit.score !== null && renderBlockingAudit.score >= 0.9;
+              results.push({
+                test_run_id: testRunId,
+                category: "structure",
+                check_name: `Eliminate Render-Blocking Resources (${vName})`,
+                status: pass ? "pass" : ((renderBlockingAudit.score !== null && renderBlockingAudit.score >= 0.5) ? "warning" : "fail"),
+                severity: pass ? "low" : ((renderBlockingAudit.score !== null && renderBlockingAudit.score >= 0.5) ? "medium" : "critical"),
+                message: pass
+                  ? `No significant render-blocking resources found (${vName})`
+                  : `Render-blocking resources are delaying the first paint by ~${wastedMs}ms (${vName}).`,
+                fix_recommendation: pass ? "" : "Inline critical CSS, defer non-critical JS and CSS using 'defer' or 'async' tags, and remove unused stylesheets to unblock page rendering.",
+                screenshot_url: null,
+              });
+            }
+
+            // ── 21. Reduce The Impact Of Third-Party Code ────────────────────
+            const thirdPartySummaryAudit = audits["third-party-summary"];
+            if (thirdPartySummaryAudit) {
+              const wastedMs = Math.round(thirdPartySummaryAudit.numericValue ?? 0);
+              const pass = thirdPartySummaryAudit.score !== null && thirdPartySummaryAudit.score >= 0.9;
+              results.push({
+                test_run_id: testRunId,
+                category: "structure",
+                check_name: `Reduce The Impact Of Third-Party Code (${vName})`,
+                status: pass ? "pass" : ((thirdPartySummaryAudit.score !== null && thirdPartySummaryAudit.score >= 0.5) ? "warning" : "fail"),
+                severity: pass ? "low" : ((thirdPartySummaryAudit.score !== null && thirdPartySummaryAudit.score >= 0.5) ? "medium" : "critical"),
+                message: pass
+                  ? `Third-party code impact is minimal (${vName})`
+                  : `Third-party code is blocking the main thread for ~${wastedMs}ms (${vName}). Analytics, ads, and widgets impact your site's performance.`,
+                fix_recommendation: pass ? "" : "Remove unnecessary third-party scripts. For required ones, load them asynchronously, use 'preconnect', or self-host where possible. Use a Tag Manager to control when scripts fire.",
+                screenshot_url: null,
+              });
+            }
+
           } catch (structureErr) {
             logger.warn(`[Structure] Checks failed for ${vName}:`, structureErr);
           }
@@ -1425,6 +1669,48 @@ async function runTests(
             fix_recommendation: tti > 3.8 ? getFixRecommendation("performance_score_low") : "", screenshot_url: null
           });
 
+          // ── BROWSER TIMINGS ──
+          // Use Lighthouse network timings and primary metrics to estimate standard Browser Timings
+          const connTime = Math.round(lhr.audits['network-rtt']?.numericValue ?? 50);
+          const backendTime = Math.round(lhr.audits['server-response-time']?.numericValue ?? (ttfb > 0 ? ttfb : 200));
+          const firstPaintMs = Math.round(fcp * 1000);
+          const domInteractiveMs = Math.round((tti > 0 ? tti : fcp) * 1000);
+          const domContentLoadedMs = Math.round((fcp + 0.1) * 1000);
+          const onloadMs = Math.round((tti + 0.2) * 1000);
+
+          let fullyLoadedMs = onloadMs;
+          const networkReqs = lhr.audits['network-requests']?.details?.items;
+          if (networkReqs && Array.isArray(networkReqs)) {
+            let maxEnd = 0;
+            networkReqs.forEach(r => { if (r.networkEndTime > maxEnd) maxEnd = r.networkEndTime; });
+            if (maxEnd > 0) fullyLoadedMs = Math.max(fullyLoadedMs, Math.round(maxEnd));
+          }
+
+          const browserTimingsMapping = [
+            { name: "Redirect Duration", val: 0 },
+            { name: "Connection Duration", val: connTime },
+            { name: "Backend Duration", val: backendTime },
+            { name: "First Paint", val: firstPaintMs },
+            { name: "DOM Interactive Time", val: domInteractiveMs },
+            { name: "DOM Content Loaded Time", val: domContentLoadedMs },
+            { name: "Onload Time", val: onloadMs },
+            { name: "Fully Loaded Time", val: fullyLoadedMs }
+          ];
+
+          browserTimingsMapping.forEach(timing => {
+            results.push({
+              test_run_id: testRunId,
+              category: "performance",
+              check_name: `${timing.name} (${vName})`,
+              status: "pass",
+              severity: "low",
+              message: `${timing.val}ms (${vName})`,
+              fix_recommendation: "",
+              screenshot_url: null
+            });
+          });
+
+
           // ── THIRD-PARTY IMPACT ANALYSIS ──────────────────────────────────────
           // Uses data already collected by Lighthouse — no extra requests needed.
           try {
@@ -1432,52 +1718,52 @@ async function runTests(
 
             // Known third-party entity classification map
             const KNOWN_ENTITIES: Record<string, { name: string; type: ThirdPartyEntity["type"] }> = {
-              "google-analytics.com":     { name: "Google Analytics", type: "analytics" },
-              "googletagmanager.com":     { name: "Google Tag Manager", type: "analytics" },
-              "googletagservices.com":    { name: "Google Tag Services", type: "analytics" },
-              "googlesyndication.com":    { name: "Google Ads", type: "ads" },
-              "doubleclick.net":          { name: "Google DoubleClick", type: "ads" },
-              "facebook.net":             { name: "Facebook SDK", type: "social" },
-              "facebook.com":             { name: "Facebook", type: "social" },
-              "connect.facebook.net":     { name: "Facebook Connect", type: "social" },
-              "twitter.com":              { name: "Twitter/X", type: "social" },
-              "cdn.jsdelivr.net":         { name: "jsDelivr CDN", type: "cdn" },
-              "cdnjs.cloudflare.com":     { name: "Cloudflare CDN", type: "cdn" },
-              "unpkg.com":                { name: "unpkg CDN", type: "cdn" },
-              "cloudinary.com":           { name: "Cloudinary", type: "media" },
-              "res.cloudinary.com":       { name: "Cloudinary", type: "media" },
-              "imagekit.io":              { name: "ImageKit", type: "media" },
-              "fastly.net":               { name: "Fastly CDN", type: "cdn" },
-              "akamaized.net":            { name: "Akamai CDN", type: "cdn" },
-              "cloudfront.net":           { name: "AWS CloudFront", type: "cdn" },
-              "amazonaws.com":            { name: "AWS S3/Services", type: "cdn" },
-              "mongodb.com":              { name: "MongoDB Atlas", type: "database" },
-              "stripe.com":               { name: "Stripe", type: "other" },
-              "stripe.js":                { name: "Stripe.js", type: "other" },
-              "intercom.io":              { name: "Intercom", type: "analytics" },
-              "hotjar.com":               { name: "Hotjar", type: "analytics" },
-              "mixpanel.com":             { name: "Mixpanel", type: "analytics" },
-              "segment.com":              { name: "Segment", type: "analytics" },
-              "typekit.net":              { name: "Adobe Fonts", type: "cdn" },
-              "fonts.googleapis.com":     { name: "Google Fonts CSS", type: "cdn" },
-              "fonts.gstatic.com":        { name: "Google Fonts Assets", type: "cdn" },
-              "youtube.com":              { name: "YouTube Embed", type: "media" },
-              "ytimg.com":                { name: "YouTube Images", type: "media" },
-              "vimeo.com":                { name: "Vimeo Embed", type: "media" },
-              "recaptcha.net":            { name: "Google reCAPTCHA", type: "other" },
-              "gstatic.com":              { name: "Google Static", type: "cdn" },
-              "ajax.googleapis.com":      { name: "Google APIs", type: "cdn" },
-              "sentry.io":                { name: "Sentry Error Tracking", type: "analytics" },
-              "bugsnag.com":              { name: "Bugsnag", type: "analytics" },
-              "crisp.chat":               { name: "Crisp Chat", type: "other" },
-              "tawk.to":                  { name: "Tawk.to Chat", type: "other" },
-              "zendesk.com":              { name: "Zendesk", type: "other" },
-              "hubspot.com":              { name: "HubSpot", type: "analytics" },
-              "hs-scripts.com":           { name: "HubSpot Scripts", type: "analytics" },
-              "snapchat.com":             { name: "Snapchat Pixel", type: "ads" },
-              "tiktok.com":               { name: "TikTok Pixel", type: "ads" },
-              "linkedin.com":             { name: "LinkedIn Insight", type: "analytics" },
-              "pinimg.com":               { name: "Pinterest", type: "social" },
+              "google-analytics.com": { name: "Google Analytics", type: "analytics" },
+              "googletagmanager.com": { name: "Google Tag Manager", type: "analytics" },
+              "googletagservices.com": { name: "Google Tag Services", type: "analytics" },
+              "googlesyndication.com": { name: "Google Ads", type: "ads" },
+              "doubleclick.net": { name: "Google DoubleClick", type: "ads" },
+              "facebook.net": { name: "Facebook SDK", type: "social" },
+              "facebook.com": { name: "Facebook", type: "social" },
+              "connect.facebook.net": { name: "Facebook Connect", type: "social" },
+              "twitter.com": { name: "Twitter/X", type: "social" },
+              "cdn.jsdelivr.net": { name: "jsDelivr CDN", type: "cdn" },
+              "cdnjs.cloudflare.com": { name: "Cloudflare CDN", type: "cdn" },
+              "unpkg.com": { name: "unpkg CDN", type: "cdn" },
+              "cloudinary.com": { name: "Cloudinary", type: "media" },
+              "res.cloudinary.com": { name: "Cloudinary", type: "media" },
+              "imagekit.io": { name: "ImageKit", type: "media" },
+              "fastly.net": { name: "Fastly CDN", type: "cdn" },
+              "akamaized.net": { name: "Akamai CDN", type: "cdn" },
+              "cloudfront.net": { name: "AWS CloudFront", type: "cdn" },
+              "amazonaws.com": { name: "AWS S3/Services", type: "cdn" },
+              "mongodb.com": { name: "MongoDB Atlas", type: "database" },
+              "stripe.com": { name: "Stripe", type: "other" },
+              "stripe.js": { name: "Stripe.js", type: "other" },
+              "intercom.io": { name: "Intercom", type: "analytics" },
+              "hotjar.com": { name: "Hotjar", type: "analytics" },
+              "mixpanel.com": { name: "Mixpanel", type: "analytics" },
+              "segment.com": { name: "Segment", type: "analytics" },
+              "typekit.net": { name: "Adobe Fonts", type: "cdn" },
+              "fonts.googleapis.com": { name: "Google Fonts CSS", type: "cdn" },
+              "fonts.gstatic.com": { name: "Google Fonts Assets", type: "cdn" },
+              "youtube.com": { name: "YouTube Embed", type: "media" },
+              "ytimg.com": { name: "YouTube Images", type: "media" },
+              "vimeo.com": { name: "Vimeo Embed", type: "media" },
+              "recaptcha.net": { name: "Google reCAPTCHA", type: "other" },
+              "gstatic.com": { name: "Google Static", type: "cdn" },
+              "ajax.googleapis.com": { name: "Google APIs", type: "cdn" },
+              "sentry.io": { name: "Sentry Error Tracking", type: "analytics" },
+              "bugsnag.com": { name: "Bugsnag", type: "analytics" },
+              "crisp.chat": { name: "Crisp Chat", type: "other" },
+              "tawk.to": { name: "Tawk.to Chat", type: "other" },
+              "zendesk.com": { name: "Zendesk", type: "other" },
+              "hubspot.com": { name: "HubSpot", type: "analytics" },
+              "hs-scripts.com": { name: "HubSpot Scripts", type: "analytics" },
+              "snapchat.com": { name: "Snapchat Pixel", type: "ads" },
+              "tiktok.com": { name: "TikTok Pixel", type: "ads" },
+              "linkedin.com": { name: "LinkedIn Insight", type: "analytics" },
+              "pinimg.com": { name: "Pinterest", type: "social" },
             };
 
             const classifyDomain = (domain: string): { name: string; type: ThirdPartyEntity["type"] } => {
@@ -1586,7 +1872,7 @@ async function runTests(
                   found = true;
                   // Merge: prefer non-zero values
                   if (entity.transferSizeKB === 0) entity.transferSizeKB = data.sizeKB;
-                  if (entity.requestCount === 0)   entity.requestCount   = data.requests;
+                  if (entity.requestCount === 0) entity.requestCount = data.requests;
                   // Update domain to the real hostname if it was a fallback
                   if (!entity.domain.includes(".") || entity.domain === entity.name.toLowerCase().replace(/\s+/g, ".")) {
                     entity.domain = domain;
@@ -1666,20 +1952,21 @@ async function runTests(
             const thirdPartySizePercent = totalSizeKB > 0 ? Math.round((thirdPartySizeKB / totalSizeKB) * 100) : 0;
 
             // ── 6. Verdict logic ─────────────────────────────────────────────
-            const perfScore = Math.round((lhr.categories.performance?.score ?? 0) * 100);
-            const perfIsPoor = perfScore < 70;
-            const thirdPartyIsSignificant = thirdPartyTbtPercent >= 50 || lcpIsThirdParty || renderBlockingThirdParties.length > 0;
-            const firstPartyIssues = firstPartyTbt > (isMobile ? 300 : 200) || (tbt > 0 && thirdPartyTbtPercent < 30);
+            const tbtThreshold = isMobile ? 300 : 200;
+            const thirdPartyTbtIsHeavy = thirdPartyTbt > (tbtThreshold * 0.5); // Third-party alone causes significant TBT
+
+            const thirdPartyIsSignificant = thirdPartyTbtIsHeavy || lcpIsThirdParty || renderBlockingThirdParties.length > 0;
+            const firstPartyIssues = firstPartyTbt > tbtThreshold;
 
             let verdict: ThirdPartyAnalysis["verdict"];
-            if (!perfIsPoor) {
-              verdict = "clean";
-            } else if (thirdPartyIsSignificant && !firstPartyIssues) {
+            if (thirdPartyIsSignificant && !firstPartyIssues) {
               verdict = "third_party_issue";
             } else if (thirdPartyIsSignificant && firstPartyIssues) {
               verdict = "mixed";
-            } else {
+            } else if (!thirdPartyIsSignificant && firstPartyIssues) {
               verdict = "site_issue";
+            } else {
+              verdict = "clean";
             }
 
             // ── 7. Build human-readable message ──────────────────────────────
@@ -1689,10 +1976,10 @@ async function runTests(
               .slice(0, 5);
 
             const verdictMessages: Record<ThirdPartyAnalysis["verdict"], string> = {
-              clean:               `Your site and third-party services are performing well (score: ${perfScore}/100).`,
-              site_issue:          `Your site's own code is causing performance issues (score: ${perfScore}/100). Third-party services account for only ${thirdPartyTbtPercent}% of blocking time.`,
-              third_party_issue:   `Your website code is healthy, but third-party services are dragging performance down (score: ${perfScore}/100). ${thirdPartyTbtPercent}% of blocking time is from external services.${lcpIsThirdParty ? ` LCP image is served from third-party: ${lcpDomain}.` : ""}`,
-              mixed:               `Both your site code and third-party services are contributing to poor performance (score: ${perfScore}/100). Third-parties: ${thirdPartyTbtPercent}% of blocking time.`,
+              clean: `Your site's code and third-party services are well-balanced and not causing significant main-thread blocking time overhead (score: ${perfScore}/100).`,
+              site_issue: `Your code is primarily responsible for the heavy blocking time (${totalTbt}ms). Third-party services account for only ${thirdPartyTbtPercent}% of the blockage (score: ${perfScore}/100).`,
+              third_party_issue: `Your website code is optimal, but third-party services are dragging performance down. ${thirdPartyTbtPercent}% of blocking time is from external tracking/ads/widgets.${lcpIsThirdParty ? ` LCP image is served from third-party: ${lcpDomain}.` : ""} (score: ${perfScore}/100).`,
+              mixed: `Both your own code and third-party scripts are heavily blocking the main thread (Total: ${totalTbt}ms). Your code: ${firstPartyTbt}ms, Third-party: ${thirdPartyTbt}ms. (score: ${perfScore}/100).`,
             };
 
             const analysis: ThirdPartyAnalysis = {
