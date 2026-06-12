@@ -860,6 +860,28 @@ async function runTests(
   }
 
 
+
+  
+// Checking the CrUX Data For the Website
+try {
+  const crux_API = 'AIzaSyAfbcrioN3OdbD_2xH9jDab4AhQbcakww0';
+  const CRUX_API_URL = `https://chromeuxreport.googleapis.com/v1/records:queryRecord?key=${crux_API}`;
+  const res = await axios.post(CRUX_API_URL, {
+    origin: url,
+    formFactor: "PHONE",   // optional: "PHONE" | "DESKTOP" | "TABLET", omit for ALL_FORM_FACTORS
+  });
+  logger.info(
+    `\n===== CRUX REPORT START =====\n` +
+    JSON.stringify(res.data, null, 2) +
+    `\n===== CRUX Report END =====\n`
+  );
+} catch (error) {
+  console.log("CrUX Request Failed:", error);
+}
+
+
+
+
   // ── PERFORMANCE via Lighthouse ──────────────────────
   if (checks.performance) {
     // ⚡ CPU Cooldown: Let the CPU settle completely before running performance profiling
@@ -2037,6 +2059,10 @@ async function runTests(
         }
       }
     }
+
+    
+
+
 
     // ── LOAD TESTING via k6 (Throughput, Concurrent Users) ──────────
     console.log("Starting k6 load test for Throughput & Concurrent Users...");
